@@ -25,6 +25,7 @@ from .i18n import SUPPORTED_LOCALES, get_locale, init_locale, set_locale, t
 from .ngrok_manager import (
     NgrokTunnelManager,
     configure_authtoken,
+    is_endpoint_already_online_error,
     find_ngrok_binary,
     has_authtoken_configured,
     is_missing_authtoken_error,
@@ -1213,10 +1214,12 @@ class DeepSeekProxyGUI:
 
             self._show_dashboard()
         except Exception as exc:
-            messagebox.showerror(
-                t("setup.error.title"),
-                t("setup.error.body", error=exc),
-            )
+            error_text = str(exc)
+            if is_endpoint_already_online_error(error_text):
+                body = t("setup.error.endpoint_in_use", error=error_text)
+            else:
+                body = t("setup.error.body", error=error_text)
+            messagebox.showerror(t("setup.error.title"), body)
             LOG.error(t("proxy.log.setup_failed", error=exc))
 
     def _show_dashboard(self) -> None:

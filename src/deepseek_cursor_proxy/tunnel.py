@@ -12,6 +12,12 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 from .logging import LOG
+from .platform_support import stop_ngrok_processes
+
+
+def _is_endpoint_already_online_error(message: str) -> bool:
+    normalized = message.lower()
+    return "err_ngrok_334" in normalized or "is already online" in normalized
 
 
 DEFAULT_NGROK_API_URL = "http://127.0.0.1:4040/api"
@@ -204,6 +210,8 @@ class NgrokTunnel:
             LOG.info("reusing existing ngrok tunnel: %s", existing)
             return existing
 
+        stop_ngrok_processes()
+
         if not ngrok_command_available(self.command):
             raise RuntimeError(
                 "ngrok is not installed or is not on PATH. Install it, then run "
@@ -226,6 +234,13 @@ class NgrokTunnel:
             return self.wait_for_public_url()
         except Exception as exc:
             stderr = read_ngrok_stderr(self.stderr_handle)
+            combined = f"{exc}\n{stderr}" if stderr else str(exc)
+            if _is_endpoint_already_online_error(combined):
+                existing = find_existing_public_url(self.target_url, self.api_url)
+                if existing is not None:
+                    self.reused_external = True
+                    LOG.info("reusing ngrok tunnel after endpoint conflict: %s", existing)
+                    return existing
             self.stop()
             if stderr:
                 raise RuntimeError(f"{exc}\n{stderr}") from exc

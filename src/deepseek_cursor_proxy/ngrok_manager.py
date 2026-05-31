@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import random
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -330,6 +332,49 @@ def configure_authtoken(
     return True
 
 
+def is_endpoint_already_online_error(message: str) -> bool:
+    """判断 ngrok 报错是否因固定域名/端点已被占用（ERR_NGROK_334）。"""
+    normalized = message.lower()
+    return "err_ngrok_334" in normalized or "is already online" in normalized
+
+
+def _ngrok_session_started(output: str) -> bool:
+    lowered = output.lower()
+    return (
+        "started tunnel" in lowered
+        or "tunnel session started" in lowered
+        or "starting web service" in lowered
+    )
+
+
+def _create_minimal_probe_config(authtoken: str) -> Path:
+    """创建仅含 authtoken 的临时配置，避免用户 ngrok.yml 中的固定域名干扰探测。"""
+    fd, path_str = tempfile.mkstemp(suffix=".yml", prefix="ngrok-probe-")
+    os.close(fd)
+    probe_file = Path(path_str)
+    probe_file.write_text(
+        yaml.safe_dump(
+            {"version": "3", "agent": {"authtoken": authtoken.strip()}},
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return probe_file
+
+
+def _raise_from_ngrok_probe_output(output: str) -> None:
+    if is_endpoint_already_online_error(output) and _ngrok_session_started(output):
+        return
+    if is_missing_authtoken_error(output):
+        raise RuntimeError(output.strip())
+    if "err_ngrok_334" in output.lower():
+        raise RuntimeError(output.strip())
+    if "authentication failed" in output.lower() or "err_ngrok_" in output.lower():
+        raise RuntimeError(output.strip())
+    raise RuntimeError(output.strip() or "ngrok exited before authtoken verification completed")
+
+
 def verify_authtoken_connectivity(
     ngrok_binary: str | None = None,
     timeout: float = 8.0,
@@ -337,6 +382,12 @@ def verify_authtoken_connectivity(
     """验证 authtoken 能建立 ngrok 隧道会话。"""
     ngrok_bin = ngrok_binary or find_ngrok_binary()
     config_file = ngrok_config_path()
+    authtoken = read_authtoken_from_file(config_file)
+    if not authtoken:
+        raise RuntimeError("ngrok authtoken 未写入配置文件，无法验证连通性")
+
+    stop_ngrok_processes()
+    probe_config = _create_minimal_probe_config(authtoken)
     probe_port = random.randint(20000, 40000)
     target = f"127.0.0.1:{probe_port}"
 
@@ -345,7 +396,7 @@ def verify_authtoken_connectivity(
             ngrok_bin,
             "http",
             target,
-            f"--config={_config_path_arg(config_file)}",
+            f"--config={_config_path_arg(probe_config)}",
             "--log=stdout",
         ],
         stdout=subprocess.PIPE,
@@ -360,26 +411,33 @@ def verify_authtoken_connectivity(
                 line = proc.stdout.readline()
                 if line:
                     collected.append(line)
-                    lowered = line.lower()
-                    if "started tunnel" in lowered or "tunnel session started" in lowered:
+                    output = "".join(collected)
+                    if _ngrok_session_started(output):
                         return
-                    if "authentication failed" in lowered or "err_ngrok_" in lowered:
-                        raise RuntimeError("".join(collected).strip())
+                    lowered = line.lower()
+                    if "authentication failed" in lowered:
+                        raise RuntimeError(output.strip())
+                    if "err_ngrok_" in lowered:
+                        if is_endpoint_already_online_error(output):
+                            if _ngrok_session_started(output):
+                                return
+                        _raise_from_ngrok_probe_output(output)
 
             if proc.poll() is not None:
                 output = "".join(collected)
                 if proc.stdout is not None:
                     output += proc.stdout.read()
-                if "started tunnel" in output.lower():
+                if _ngrok_session_started(output):
                     return
                 if output.strip():
-                    raise RuntimeError(output.strip())
+                    _raise_from_ngrok_probe_output(output)
                 raise RuntimeError("ngrok exited before authtoken verification completed")
 
             time.sleep(0.1)
 
         raise RuntimeError("Timed out verifying ngrok authtoken")
     finally:
+        probe_config.unlink(missing_ok=True)
         if proc.poll() is None:
             proc.terminate()
             try:

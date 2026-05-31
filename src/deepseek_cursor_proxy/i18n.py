@@ -129,6 +129,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "proxy.log.setup_failed": "配置失败: {error}",
         "setup.error.title": "配置失败",
         "setup.error.body": "配置过程出错:\n{error}",
+        "setup.error.endpoint_in_use": (
+            "ngrok 固定域名已被其他会话占用（ERR_NGROK_334）。\n\n"
+            "请先尝试：\n"
+            "  1. 关闭其他正在运行的 ngrok 或本程序窗口\n"
+            "  2. 在任务管理器中结束 ngrok.exe\n"
+            "  3. 打开 https://dashboard.ngrok.com/endpoints 结束旧会话后重试\n\n"
+            "详细日志:\n{error}"
+        ),
         "config.error.title": "配置错误",
         "config.error.body": "无法加载配置文件:\n{error}",
     },
@@ -243,6 +251,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "proxy.log.setup_failed": "Setup failed: {error}",
         "setup.error.title": "Setup Failed",
         "setup.error.body": "An error occurred during setup:\n{error}",
+        "setup.error.endpoint_in_use": (
+            "The ngrok reserved endpoint is already in use (ERR_NGROK_334).\n\n"
+            "Try:\n"
+            "  1. Close other ngrok or proxy app instances\n"
+            "  2. End ngrok.exe in Task Manager (Windows)\n"
+            "  3. Stop the session at https://dashboard.ngrok.com/endpoints\n\n"
+            "Details:\n{error}"
+        ),
         "config.error.title": "Configuration Error",
         "config.error.body": "Unable to load configuration:\n{error}",
     },

@@ -115,32 +115,36 @@ class TunnelTests(unittest.TestCase):
         with patch(
             "deepseek_cursor_proxy.tunnel.find_existing_public_url", return_value=None
         ):
-            with patch(
-                "deepseek_cursor_proxy.tunnel.ngrok_command_available", return_value=True
-            ):
-                with patch("deepseek_cursor_proxy.tunnel.subprocess.Popen") as popen:
-                    popen.return_value = MagicMock(poll=lambda: None)
-                    with patch.object(
-                        NgrokTunnel,
-                        "wait_for_public_url",
-                        return_value="https://example.ngrok-free.app",
-                    ):
-                        tunnel = NgrokTunnel(
-                            "http://127.0.0.1:9000",
-                            ngrok_url="https://my.ngrok.dev",
+            with patch("deepseek_cursor_proxy.tunnel.stop_ngrok_processes"):
+                with patch(
+                    "deepseek_cursor_proxy.tunnel.ngrok_command_available",
+                    return_value=True,
+                ):
+                    with patch(
+                        "deepseek_cursor_proxy.tunnel.subprocess.Popen"
+                    ) as popen:
+                        popen.return_value = MagicMock(poll=lambda: None)
+                        with patch.object(
+                            NgrokTunnel,
+                            "wait_for_public_url",
+                            return_value="https://example.ngrok-free.app",
+                        ):
+                            tunnel = NgrokTunnel(
+                                "http://127.0.0.1:9000",
+                                ngrok_url="https://my.ngrok.dev",
+                            )
+                            tunnel.start()
+                        popen.assert_called_once()
+                        argv, _kwargs = popen.call_args
+                        self.assertEqual(
+                            argv[0],
+                            [
+                                "ngrok",
+                                "http",
+                                "http://127.0.0.1:9000",
+                                "--url=https://my.ngrok.dev",
+                            ],
                         )
-                        tunnel.start()
-                    popen.assert_called_once()
-                    argv, _kwargs = popen.call_args
-                    self.assertEqual(
-                        argv[0],
-                        [
-                            "ngrok",
-                            "http",
-                            "http://127.0.0.1:9000",
-                            "--url=https://my.ngrok.dev",
-                        ],
-                    )
 
 
 if __name__ == "__main__":

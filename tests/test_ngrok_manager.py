@@ -6,6 +6,7 @@ import unittest
 
 from deepseek_cursor_proxy.ngrok_manager import (
     clear_authtoken_from_file,
+    is_endpoint_already_online_error,
     is_missing_authtoken_error,
     migrate_and_cleanup_legacy_tokens,
     read_authtoken,
@@ -58,6 +59,15 @@ class NgrokManagerTests(unittest.TestCase):
             content = config_file.read_text(encoding="utf-8")
             self.assertIn("version:", content)
             self.assertIn("region: us", content)
+
+    def test_is_endpoint_already_online_error_detects_334(self) -> None:
+        message = (
+            "failed to start tunnel: The endpoint "
+            "'https://yer-divisible-academically.ngrok-free.dev' is already online. "
+            "ERR_NGROK_334"
+        )
+        self.assertTrue(is_endpoint_already_online_error(message))
+        self.assertFalse(is_endpoint_already_online_error("connection reset"))
 
     def test_is_missing_authtoken_error_detects_4018(self) -> None:
         message = (
