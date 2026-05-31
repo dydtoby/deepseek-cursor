@@ -15,6 +15,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Any
 
+from .clear_data import clear_local_data
 from .config import (
     ProxyConfig,
     default_config_path,
@@ -759,6 +760,7 @@ class Dashboard(tk.Frame):
         log_queue: queue.Queue[logging.LogRecord],
         status_queue: queue.Queue[dict[str, Any]],
         on_language_change: Any = None,
+        on_data_cleared: Any = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(master, bg=COLORS["bg"], **kwargs)
@@ -767,6 +769,7 @@ class Dashboard(tk.Frame):
         self._log_queue = log_queue
         self._status_queue = status_queue
         self._on_language_change = on_language_change
+        self._on_data_cleared = on_data_cleared
         self._public_url: str | None = None
         self._local_url: str | None = None
         self._setting_labels: list[tk.Label] = []
@@ -953,6 +956,89 @@ class Dashboard(tk.Frame):
         )
         self._language_combo.pack(side="left")
         self._language_combo.bind("<<ComboboxSelected>>", self._on_language_selected)
+
+        clear_row = tk.Frame(sf, bg=COLORS["surface"])
+        clear_row.pack(fill="x", pady=(14, 0))
+        self._clear_data_btn = tk.Button(
+            clear_row,
+            text=t("dashboard.clear_data.btn"),
+            font=FONTS["body"],
+            bg=COLORS["bg"],
+            fg=COLORS["red"],
+            relief="flat",
+            padx=12,
+            pady=4,
+            command=self._clear_data,
+        )
+        self._clear_data_btn.pack(anchor="w")
+
+    def _clear_data(self) -> None:
+        if not messagebox.askyesno(
+            t("dashboard.clear_data.confirm.title"),
+            t("dashboard.clear_data.confirm.body"),
+        ):
+            return
+
+        if self._controller.is_running:
+            self._controller.stop()
+            self._set_state("stopping", t("dashboard.status.stopping"))
+            self._clear_data_btn.configure(state="disabled")
+            self.after(200, self._clear_data_after_stop)
+            return
+
+        self._perform_clear_data()
+
+    def _clear_data_after_stop(self) -> None:
+        if self._controller.is_running:
+            self.after(200, self._clear_data_after_stop)
+            return
+        self._clear_data_btn.configure(state="normal")
+        self._set_state("stopped", t("dashboard.status.stopped"))
+        self._url_var.set(t("dashboard.url.wait"))
+        self._perform_clear_data()
+
+    def _perform_clear_data(self) -> None:
+        try:
+            result = clear_local_data(config=self._config)
+        except Exception as exc:
+            messagebox.showerror(
+                t("dashboard.clear_data.error.title"),
+                t("dashboard.clear_data.error.body", error=exc),
+            )
+            return
+
+        if not result.ok:
+            messagebox.showerror(
+                t("dashboard.clear_data.error.title"),
+                t("dashboard.clear_data.error.body", error="\n".join(result.errors)),
+            )
+            return
+
+        token_status = (
+            t("dashboard.clear_data.success.token_removed")
+            if result.authtoken_cleared
+            else t("dashboard.clear_data.success.token_not_found")
+        )
+        cache_status = (
+            t("dashboard.clear_data.success.cache_rows", count=result.cache_rows_cleared)
+            if result.cache_rows_cleared
+            else t("dashboard.clear_data.success.cache_empty")
+        )
+        messagebox.showinfo(
+            t("dashboard.clear_data.success.title"),
+            t(
+                "dashboard.clear_data.success.body",
+                token=token_status,
+                cache=cache_status,
+            ),
+        )
+        LOG.info(
+            "Cleared local data: authtoken=%s cache_rows=%s",
+            result.authtoken_cleared,
+            result.cache_rows_cleared,
+        )
+        if self._on_data_cleared is not None:
+            self._on_data_cleared()
 
     def _on_language_selected(self, _event: Any = None) -> None:
         selected = self._language_var.get()
@@ -1152,8 +1238,18 @@ class DeepSeekProxyGUI:
             log_queue=self._log_queue,
             status_queue=self._status_queue,
             on_language_change=self._reload_interface,
+            on_data_cleared=self._on_data_cleared,
         )
         self._dashboard.pack(fill="both", expand=True)
+
+    def _on_data_cleared(self) -> None:
+        if self._controller.is_running:
+            self._controller.stop()
+        if self._dashboard is not None:
+            self._dashboard.pack_forget()
+            self._dashboard.destroy()
+            self._dashboard = None
+        self._show_wizard()
 
     def _reload_interface(self) -> None:
         if self._controller.is_running:

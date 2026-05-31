@@ -1,83 +1,166 @@
-"""生成应用图标。
-
-如果没有 PIL/Pillow，则创建基于 PNG 的最小图标。
-"""
+"""Generate a multi-size Windows .ico for the app and shortcuts."""
 
 from __future__ import annotations
 
-import base64
 import struct
 import sys
 from pathlib import Path
 
-# 32x32 蓝色圆形图标的最小 PNG 数据（base64 编码）
-# 这是一个极简的 DeepSeek 风格蓝色图标
-_MINIMAL_ICON_PNG_B64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAtklEQVR4"
-    "nO2WsQ3CMBBF/x0yAiMwAiMwAiMwAiMwAiMwAiMwAiNQskIFyYWiOE4s"
-    "y1eePtl3vrv/PzlJUs4ZERGZOee8AZhtzT0i4rkAiDG+BkBEHJsAGGM8"
-    "JskH8CWgCMDbJQhjrIExxjUgIs4JIMZ4Nsa4NkBEHAAaIYT3ZQBjjK0A"
-    "F8YYWwDGGLMAXHLO/w+gtb4MgK2sA7e4tQS01g8A7jFGX4OYwey9N+f8"
-    "CACM1toHQCl1PwJ4AXKKSGV0z5YIAAAAAElFTkSuQmCC"
-)
+ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)
+BRAND_BLUE = (0x4D, 0x6B, 0xFE, 255)
+BRAND_BLUE_DARK = (0x30, 0x30, 0x32, 255)
+WHITE = (255, 255, 255, 255)
 
 
-def generate_icon(output_path: Path, size: int = 32) -> None:
-    """生成 .ico 文件。"""
+def _set_pixel(
+    pixels: list[tuple[int, int, int, int]],
+    size: int,
+    x: int,
+    y: int,
+    color: tuple[int, int, int, int],
+) -> None:
+    if 0 <= x < size and 0 <= y < size:
+        pixels[y * size + x] = color
+
+
+def _draw_icon_rgba(size: int) -> list[tuple[int, int, int, int]]:
+    pixels = [(0, 0, 0, 0)] * (size * size)
+    center = (size - 1) / 2
+    outer_radius = size * 0.46
+    inner_radius = size * 0.40
+
+    for y in range(size):
+        for x in range(size):
+            dx = x - center
+            dy = y - center
+            distance_sq = dx * dx + dy * dy
+            if distance_sq <= outer_radius * outer_radius:
+                pixels[y * size + x] = BRAND_BLUE_DARK
+            if distance_sq <= inner_radius * inner_radius:
+                pixels[y * size + x] = BRAND_BLUE
+
+    stroke = max(1, size // 16)
+    left = int(size * 0.30)
+    top = int(size * 0.28)
+    bottom = int(size * 0.72)
+    right = int(size * 0.62)
+
+    for y in range(top, bottom + 1):
+        for s in range(stroke):
+            _set_pixel(pixels, size, left + s, y, WHITE)
+    for x in range(left, right + 1):
+        for s in range(stroke):
+            _set_pixel(pixels, size, x, top + s, WHITE)
+            _set_pixel(pixels, size, x, bottom - s, WHITE)
+    for y in range(top, bottom + 1):
+        for s in range(stroke):
+            _set_pixel(pixels, size, right - s, y, WHITE)
+
+    return pixels
+
+
+def _bitmap_payload(size: int, pixels: list[tuple[int, int, int, int]]) -> bytes:
+    header = struct.pack(
+        "<IIIHHIIIIII",
+        40,
+        size,
+        size * 2,
+        1,
+        32,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    )
+
+    xor_rows = bytearray()
+    for y in range(size - 1, -1, -1):
+        row = pixels[y * size : (y + 1) * size]
+        for red, green, blue, alpha in row:
+            xor_rows.extend((blue, green, red, alpha))
+        padding = (4 - (size * 4) % 4) % 4
+        xor_rows.extend(b"\x00" * padding)
+
+    and_row_bytes = ((size + 31) // 32) * 4
+    and_rows = b"\x00" * (and_row_bytes * size)
+    return header + bytes(xor_rows) + and_rows
+
+
+def _build_ico(images: list[tuple[int, bytes]]) -> bytes:
+    count = len(images)
+    header = struct.pack("<HHH", 0, 1, count)
+    offset = 6 + 16 * count
+    entries = bytearray()
+    blobs = bytearray()
+
+    for size, payload in images:
+        width = 0 if size >= 256 else size
+        height = 0 if size >= 256 else size
+        entries.extend(
+            struct.pack(
+                "<BBBBHHII",
+                width,
+                height,
+                0,
+                0,
+                1,
+                32,
+                len(payload),
+                offset,
+            )
+        )
+        blobs.extend(payload)
+        offset += len(payload)
+
+    return header + bytes(entries) + bytes(blobs)
+
+
+def generate_icon(output_path: Path, sizes: tuple[int, ...] = ICON_SIZES) -> None:
+    """Write a Windows-compatible multi-size .ico file."""
     try:
         from PIL import Image, ImageDraw
 
-        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        # 绘制一个蓝色圆形
-        draw.ellipse([2, 2, size - 3, size - 3], fill=(30, 30, 50, 255))
-        # 绘制 D 字母的简化表示（白色横线）
-        draw.rectangle([size // 2 - 3, size // 3, size // 2 + 3, size * 2 // 3], fill=(255, 255, 255, 255))
-        draw.rectangle([size // 3, size // 3, size // 2 + 3, size // 3 + 4], fill=(255, 255, 255, 255))
-        draw.rectangle([size // 3, size * 2 // 3 - 4, size // 2 + 3, size * 2 // 3], fill=(255, 255, 255, 255))
-
-        # 确保目录存在
         output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # 保存为 .ico（包含多尺寸）
-        img.save(str(output_path), format="ICO", sizes=[(32, 32), (16, 16)])
+        images: list[Image.Image] = []
+        for size in sizes:
+            img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            margin = max(1, size // 16)
+            draw.ellipse(
+                [margin, margin, size - margin - 1, size - margin - 1],
+                fill=(77, 107, 254, 255),
+            )
+            stroke = max(1, size // 16)
+            left = int(size * 0.30)
+            top = int(size * 0.28)
+            bottom = int(size * 0.72)
+            right = int(size * 0.62)
+            draw.rectangle([left, top, left + stroke, bottom], fill=(255, 255, 255, 255))
+            draw.rectangle([left, top, right, top + stroke], fill=(255, 255, 255, 255))
+            draw.rectangle([left, bottom - stroke + 1, right, bottom], fill=(255, 255, 255, 255))
+            draw.rectangle([right - stroke + 1, top, right, bottom], fill=(255, 255, 255, 255))
+            images.append(img)
+        images[0].save(
+            str(output_path),
+            format="ICO",
+            sizes=[(image.width, image.height) for image in images],
+            append_images=images[1:],
+        )
         print(f"图标已生成 (PIL): {output_path}")
         return
     except ImportError:
         pass
 
-    # 回退方案：使用内嵌 PNG 创建最小 .ico
-    try:
-        png_data = base64.b64decode(_MINIMAL_ICON_PNG_B64)
-    except Exception:
-        print("无法解码内嵌图标数据", file=sys.stderr)
-        return
+    images = []
+    for size in sizes:
+        pixels = _draw_icon_rgba(size)
+        images.append((size, _bitmap_payload(size, pixels)))
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # 构建 .ico 文件格式
-    # ICO header: reserved(2) + type(2) + count(2)
-    ico_header = struct.pack("<HHH", 0, 1, 1)
-    # Directory entry: width, height, colors, reserved, planes, bpp, size, offset
-    offset = 6 + 16  # header + 1 entry
-    entry = struct.pack(
-        "<BBBBHHII",
-        size if size < 256 else 0,  # width
-        size if size < 256 else 0,  # height
-        0,   # color palette
-        0,   # reserved
-        1,   # color planes
-        32,  # bits per pixel
-        len(png_data),  # image size
-        offset,          # image offset
-    )
-
-    with open(output_path, "wb") as f:
-        f.write(ico_header)
-        f.write(entry)
-        f.write(png_data)
-
-    print(f"图标已生成 (回退): {output_path}")
+    output_path.write_bytes(_build_ico(images))
+    print(f"图标已生成: {output_path} ({output_path.stat().st_size:,} bytes)")
 
 
 if __name__ == "__main__":

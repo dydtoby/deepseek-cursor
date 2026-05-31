@@ -82,6 +82,29 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dashboard.settings.port": "端口",
         "dashboard.settings.thinking": "思考模式",
         "dashboard.settings.reasoning_effort": "推理强度",
+        "dashboard.clear_data.btn": "清除缓存与 Token",
+        "dashboard.clear_data.confirm.title": "确认清除",
+        "dashboard.clear_data.confirm.body": (
+            "将清除以下内容：\n\n"
+            "  · ngrok authtoken（需重新配置）\n"
+            "  · 本地推理缓存\n\n"
+            "代理配置（端口、模型等）会保留。\n"
+            "若代理正在运行，将先停止。\n\n"
+            "确定继续吗？"
+        ),
+        "dashboard.clear_data.success.title": "清除完成",
+        "dashboard.clear_data.success.body": (
+            "已清除：\n"
+            "  · ngrok authtoken: {token}\n"
+            "  · 推理缓存: {cache} 条\n\n"
+            "将返回配置引导，请重新输入 ngrok authtoken。"
+        ),
+        "dashboard.clear_data.success.token_removed": "已删除",
+        "dashboard.clear_data.success.token_not_found": "未找到",
+        "dashboard.clear_data.success.cache_rows": "{count} 条",
+        "dashboard.clear_data.success.cache_empty": "无缓存",
+        "dashboard.clear_data.error.title": "清除失败",
+        "dashboard.clear_data.error.body": "清除过程中出错：\n{error}",
         "proxy.init_cache": "正在初始化推理缓存...",
         "proxy.start_local": "正在启动本地代理服务器...",
         "proxy.start_ngrok": "正在启动 ngrok 隧道...",
@@ -167,6 +190,29 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dashboard.settings.port": "Port",
         "dashboard.settings.thinking": "Thinking",
         "dashboard.settings.reasoning_effort": "Reasoning effort",
+        "dashboard.clear_data.btn": "Clear Cache & Token",
+        "dashboard.clear_data.confirm.title": "Confirm Clear",
+        "dashboard.clear_data.confirm.body": (
+            "This will remove:\n\n"
+            "  · ngrok authtoken (you will need to set it up again)\n"
+            "  · local reasoning cache\n\n"
+            "Proxy settings (port, model, etc.) will be kept.\n"
+            "If the proxy is running, it will be stopped first.\n\n"
+            "Continue?"
+        ),
+        "dashboard.clear_data.success.title": "Clear Complete",
+        "dashboard.clear_data.success.body": (
+            "Removed:\n"
+            "  · ngrok authtoken: {token}\n"
+            "  · reasoning cache: {cache}\n\n"
+            "Returning to setup. Enter your ngrok authtoken again."
+        ),
+        "dashboard.clear_data.success.token_removed": "removed",
+        "dashboard.clear_data.success.token_not_found": "not found",
+        "dashboard.clear_data.success.cache_rows": "{count} row(s)",
+        "dashboard.clear_data.success.cache_empty": "empty",
+        "dashboard.clear_data.error.title": "Clear Failed",
+        "dashboard.clear_data.error.body": "An error occurred while clearing data:\n{error}",
         "proxy.init_cache": "Initializing reasoning cache...",
         "proxy.start_local": "Starting local proxy server...",
         "proxy.start_ngrok": "Starting ngrok tunnel...",

@@ -19,9 +19,9 @@ xcopy /E /Y /Q "%~dp0*" "%LOCALAPPDATA%\Programs\DeepSeekCursorProxy\"
 set "START_MENU=%APPDATA%\Microsoft\Windows\Start Menu\Programs\DeepSeek Cursor Proxy"
 if not exist "%START_MENU%" mkdir "%START_MENU%"
 
-powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%START_MENU%\DeepSeek Cursor Proxy.lnk'); $Shortcut.TargetPath = '%LOCALAPPDATA%\Programs\DeepSeekCursorProxy\DeepSeekCursorProxy.exe'; $Shortcut.WorkingDirectory = '%LOCALAPPDATA%\Programs\DeepSeekCursorProxy'; $Shortcut.IconLocation = '%LOCALAPPDATA%\Programs\DeepSeekCursorProxy\DeepSeekCursorProxy.exe,0'; $Shortcut.Save()"
+powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%START_MENU%\DeepSeek Cursor Proxy.lnk'); $Shortcut.TargetPath = '%LOCALAPPDATA%\Programs\DeepSeekCursorProxy\DeepSeekCursorProxy.exe'; $Shortcut.WorkingDirectory = '%LOCALAPPDATA%\Programs\DeepSeekCursorProxy'; $Shortcut.IconLocation = '%LOCALAPPDATA%\Programs\DeepSeekCursorProxy\app_icon.ico,0'; $Shortcut.Save()"
 
-powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Desktop = [Environment]::GetFolderPath('Desktop'); $Shortcut = $WshShell.CreateShortcut($Desktop + '\DeepSeek Cursor Proxy.lnk'); $Shortcut.TargetPath = '%LOCALAPPDATA%\Programs\DeepSeekCursorProxy\DeepSeekCursorProxy.exe'; $Shortcut.WorkingDirectory = '%LOCALAPPDATA%\Programs\DeepSeekCursorProxy'; $Shortcut.IconLocation = '%LOCALAPPDATA%\Programs\DeepSeekCursorProxy\DeepSeekCursorProxy.exe,0'; $Shortcut.Save()"
+powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Desktop = [Environment]::GetFolderPath('Desktop'); $Shortcut = $WshShell.CreateShortcut($Desktop + '\DeepSeek Cursor Proxy.lnk'); $Shortcut.TargetPath = '%LOCALAPPDATA%\Programs\DeepSeekCursorProxy\DeepSeekCursorProxy.exe'; $Shortcut.WorkingDirectory = '%LOCALAPPDATA%\Programs\DeepSeekCursorProxy'; $Shortcut.IconLocation = '%LOCALAPPDATA%\Programs\DeepSeekCursorProxy\app_icon.ico,0'; $Shortcut.Save()"
 
 echo.
 echo ================================================

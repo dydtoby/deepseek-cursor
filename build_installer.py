@@ -79,6 +79,21 @@ def run_cmd(cmd: list[str], cwd: Path | None = None, desc: str = "") -> None:
 # ---------------------------------------------------------------------------
 
 
+def step_generate_icon() -> Path:
+    """生成多尺寸 Windows .ico 文件。"""
+    print("\n[步骤 0/3] 生成应用图标...")
+    icon_path = PROJECT_ROOT / "assets" / "app_icon.ico"
+    sys.path.insert(0, str(PROJECT_ROOT))
+    from generate_icon import generate_icon
+
+    generate_icon(icon_path)
+    if not icon_path.is_file():
+        print(f"\n[ERROR] 图标生成失败: {icon_path}")
+        sys.exit(1)
+    print(f"  图标路径: {icon_path} ({icon_path.stat().st_size:,} bytes)")
+    return icon_path
+
+
 def step_freeze() -> Path:
     """使用 PyInstaller 将 Python 应用冻结为独立目录。"""
     print("\n[步骤 1/3] PyInstaller 冻结...")
@@ -87,8 +102,8 @@ def step_freeze() -> Path:
     if output_dir.exists():
         shutil.rmtree(output_dir)
 
-    icon_path = PROJECT_ROOT / "assets" / "app_icon.ico"
-    icon_arg = ["--icon", str(icon_path)] if icon_path.is_file() else []
+    icon_path = step_generate_icon()
+    icon_arg = ["--icon", str(icon_path)]
 
     cmd = [
         sys.executable, "-m", "PyInstaller",
@@ -126,10 +141,11 @@ def step_freeze() -> Path:
 
     print(f"  冻结完成: {output_dir}")
 
-    # 复制安装脚本到产物目录
+    # 复制安装脚本和图标到产物目录
     install_bat_src = PROJECT_ROOT / "scripts" / "install.bat"
     if install_bat_src.is_file():
         shutil.copy2(install_bat_src, output_dir / "install.bat")
+    shutil.copy2(icon_path, output_dir / "app_icon.ico")
 
     return output_dir
 

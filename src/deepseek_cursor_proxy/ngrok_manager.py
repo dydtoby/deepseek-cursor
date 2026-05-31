@@ -136,6 +136,39 @@ def has_authtoken_configured() -> bool:
     return validate_authtoken()
 
 
+def clear_authtoken() -> bool:
+    """从 ngrok 配置文件中移除 authtoken。
+
+    返回 True 表示 authtoken 已被移除；False 表示未找到 authtoken 或配置文件。
+    """
+    config_file = ngrok_config_path()
+    if not config_file.is_file():
+        return False
+
+    try:
+        lines = config_file.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+
+    kept_lines: list[str] = []
+    removed = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("authtoken:") or stripped.startswith("authtoken "):
+            removed = True
+            continue
+        kept_lines.append(line)
+
+    if not removed:
+        return False
+
+    text = "\n".join(kept_lines)
+    if text and not text.endswith("\n"):
+        text += "\n"
+    config_file.write_text(text, encoding="utf-8")
+    return True
+
+
 # ---------------------------------------------------------------------------
 # 隧道生命周期（GUI 友好封装）
 # ---------------------------------------------------------------------------
