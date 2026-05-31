@@ -10,6 +10,7 @@ from deepseek_cursor_proxy.ngrok_manager import (
     migrate_and_cleanup_legacy_tokens,
     read_authtoken,
     read_authtoken_from_file,
+    repair_v3_config_file,
     write_authtoken_to_config,
 )
 
@@ -23,6 +24,27 @@ class NgrokManagerTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(read_authtoken_from_file(config_file), "abc123")
+
+    def test_read_authtoken_from_file_supports_v3_agent_authtoken(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_file = Path(temp_dir) / "ngrok.yml"
+            config_file.write_text(
+                'version: "3"\nagent:\n  authtoken: v3-token\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(read_authtoken_from_file(config_file), "v3-token")
+
+    def test_repair_v3_config_file_removes_invalid_top_level_authtoken(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_file = Path(temp_dir) / "ngrok.yml"
+            config_file.write_text(
+                'version: "3"\nauthtoken: stale\nagent:\n  authtoken: good\n',
+                encoding="utf-8",
+            )
+            self.assertTrue(repair_v3_config_file(config_file))
+            content = config_file.read_text(encoding="utf-8")
+            self.assertNotIn("\nauthtoken:", content.split("agent:")[0])
+            self.assertEqual(read_authtoken_from_file(config_file), "good")
 
     def test_clear_authtoken_from_file_removes_yaml_key(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -68,8 +90,16 @@ class NgrokManagerTests(unittest.TestCase):
     def test_write_authtoken_to_config_creates_yaml(self) -> None:
         with TemporaryDirectory() as temp_dir:
             config_file = Path(temp_dir) / "ngrok" / "ngrok.yml"
-            write_authtoken_to_config(config_file, "saved-token")
-            self.assertEqual(read_authtoken_from_file(config_file), "saved-token")
+            try:
+                write_authtoken_to_config(config_file, "2abcdefghijklmnopqrstuvwxyz1234567890ABCD")
+            except (FileNotFoundError, RuntimeError):
+                self.skipTest("ngrok binary unavailable")
+            self.assertEqual(
+                read_authtoken_from_file(config_file),
+                "2abcdefghijklmnopqrstuvwxyz1234567890ABCD",
+            )
+            content = config_file.read_text(encoding="utf-8")
+            self.assertNotIn('\nauthtoken:', content.split("agent:")[0])
 
     def test_migrate_and_cleanup_legacy_tokens_moves_token_to_primary(self) -> None:
         with TemporaryDirectory() as temp_dir:

@@ -144,6 +144,7 @@ class LegacyTokenCleanupResult:
 def migrate_and_cleanup_legacy_tokens() -> LegacyTokenCleanupResult:
     """将旧版路径中的 token 迁移到主配置，并清除所有旧版 token。"""
     primary = ngrok_config_path()
+    repair_v3_config_file(primary)
     primary_token = read_authtoken_from_file(primary)
     migrated_from: Path | None = None
     cleared_paths: list[Path] = []
@@ -151,9 +152,10 @@ def migrate_and_cleanup_legacy_tokens() -> LegacyTokenCleanupResult:
     for legacy_path in legacy_ngrok_config_paths():
         legacy_token = read_authtoken_from_file(legacy_path)
         if legacy_token and not primary_token:
-            write_authtoken_to_config(primary, legacy_token)
-            primary_token = legacy_token
-            migrated_from = legacy_path
+            result = _run_ngrok_add_authtoken(legacy_token, primary)
+            if result.returncode == 0:
+                primary_token = legacy_token
+                migrated_from = legacy_path
 
         if clear_authtoken_from_file(legacy_path):
             cleared_paths.append(legacy_path)
@@ -163,6 +165,49 @@ def migrate_and_cleanup_legacy_tokens() -> LegacyTokenCleanupResult:
         cleared_paths=tuple(cleared_paths),
         migrated_token=migrated_from is not None,
     )
+
+
+def _token_from_mapping(data: dict[str, Any]) -> str | None:
+    token = data.get("authtoken")
+    if isinstance(token, str) and token.strip():
+        return token.strip()
+
+    agent = data.get("agent")
+    if isinstance(agent, dict):
+        agent_token = agent.get("authtoken")
+        if isinstance(agent_token, str) and agent_token.strip():
+            return agent_token.strip()
+    return None
+
+
+def repair_v3_config_file(config_file: Path) -> bool:
+    """修复 ngrok v3 配置中被误写入的顶层 authtoken 字段。"""
+    if not config_file.is_file():
+        return False
+
+    try:
+        content = config_file.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+    try:
+        data = yaml.safe_load(content)
+    except yaml.YAMLError:
+        return False
+
+    if not isinstance(data, dict):
+        return False
+
+    version = str(data.get("version", "")).strip().strip('"').strip("'")
+    if version != "3" or "authtoken" not in data:
+        return False
+
+    del data["authtoken"]
+    config_file.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    return True
 
 
 def read_authtoken_from_file(config_file: Path) -> str | None:
@@ -178,19 +223,15 @@ def read_authtoken_from_file(config_file: Path) -> str | None:
     except yaml.YAMLError:
         data = None
     if isinstance(data, dict):
-        token = data.get("authtoken")
-        if isinstance(token, str) and token.strip():
-            return token.strip()
+        token = _token_from_mapping(data)
+        if token:
+            return token
 
     for line in content.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
         if stripped.startswith("authtoken:"):
-            value = stripped.split(":", 1)[1].strip().strip('"').strip("'")
-            if value:
-                return value
-        if stripped.startswith("- authtoken:"):
             value = stripped.split(":", 1)[1].strip().strip('"').strip("'")
             if value:
                 return value
@@ -202,29 +243,77 @@ def read_authtoken() -> str | None:
     return read_authtoken_from_file(ngrok_config_path())
 
 
-def write_authtoken_to_config(config_file: Path, token: str) -> None:
-    """将 authtoken 直接写入 ngrok 配置文件。"""
+def write_authtoken_to_config(
+    config_file: Path,
+    token: str,
+    ngrok_binary: str | None = None,
+) -> None:
+    """通过 ngrok CLI 写入 authtoken（兼容 v3 配置格式）。"""
     stripped = token.strip()
     if not stripped:
         raise ValueError("ngrok authtoken 不能为空")
 
-    config_file.parent.mkdir(parents=True, exist_ok=True)
-    data: dict[str, Any] = {}
-    if config_file.is_file():
-        try:
-            loaded = yaml.safe_load(config_file.read_text(encoding="utf-8"))
-        except (OSError, yaml.YAMLError):
-            loaded = None
-        if isinstance(loaded, dict):
-            data = loaded
+    repair_v3_config_file(config_file)
+    result = _run_ngrok_add_authtoken(stripped, config_file, ngrok_binary)
+    if result.returncode != 0:
+        stderr = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(
+            f"ngrok authtoken 配置失败（退出码 {result.returncode}）:\n{stderr}"
+        )
 
-    if "version" not in data:
-        data["version"] = "2"
-    data["authtoken"] = stripped
-    config_file.write_text(
-        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
+
+def _config_path_arg(config_file: Path) -> str:
+    return config_file.resolve().as_posix()
+
+
+def _run_ngrok_add_authtoken(
+    token: str,
+    config_file: Path,
+    ngrok_binary: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    ngrok_bin = ngrok_binary or find_ngrok_binary()
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    return subprocess.run(
+        [
+            ngrok_bin,
+            "config",
+            "add-authtoken",
+            token.strip(),
+            f"--config={_config_path_arg(config_file)}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
+
+
+def _run_ngrok_config_check(
+    config_file: Path,
+    ngrok_binary: str | None = None,
+) -> None:
+    ngrok_bin = ngrok_binary or find_ngrok_binary()
+    result = subprocess.run(
+        [
+            ngrok_bin,
+            "config",
+            "check",
+            f"--config={_config_path_arg(config_file)}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if result.returncode != 0:
+        message = (result.stderr or result.stdout or "ngrok config check failed").strip()
+        raise RuntimeError(message)
+
+
+def _clear_legacy_authtokens() -> tuple[Path, ...]:
+    cleared_paths: list[Path] = []
+    for legacy_path in legacy_ngrok_config_paths():
+        if clear_authtoken_from_file(legacy_path):
+            cleared_paths.append(legacy_path)
+    return tuple(cleared_paths)
 
 
 def wait_for_authtoken_in_file(
@@ -273,45 +362,30 @@ def configure_authtoken(
 
     ngrok_bin = ngrok_binary or find_ngrok_binary()
     config_file = ngrok_config_path()
-    config_file.parent.mkdir(parents=True, exist_ok=True)
     stop_ngrok_processes()
+    repair_v3_config_file(config_file)
 
-    config_path_arg = config_file.resolve().as_posix()
-    result = subprocess.run(
-        [
-            ngrok_bin,
-            "config",
-            "add-authtoken",
-            stripped,
-            f"--config={config_path_arg}",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    result = _run_ngrok_add_authtoken(stripped, config_file, ngrok_bin)
     if result.returncode != 0:
         stderr = (result.stderr or result.stdout or "").strip()
-        write_authtoken_to_config(config_file, stripped)
-        if read_authtoken_from_file(config_file) != stripped:
-            raise RuntimeError(
-                f"ngrok authtoken 配置失败（退出码 {result.returncode}）:\n{stderr}"
-            )
-    else:
-        saved = wait_for_authtoken_in_file(config_file, stripped)
-        if saved != stripped:
-            write_authtoken_to_config(config_file, stripped)
-
-    saved = read_authtoken_from_file(config_file)
-    if saved != stripped:
         raise RuntimeError(
-            "ngrok authtoken 未成功写入配置文件: "
-            f"{config_file}"
+            f"ngrok authtoken 配置失败（退出码 {result.returncode}）:\n{stderr}"
         )
+
+    saved = wait_for_authtoken_in_file(config_file, stripped)
+    if saved != stripped:
+        _run_ngrok_config_check(config_file, ngrok_bin)
+        saved = read_authtoken_from_file(config_file)
+        if saved != stripped:
+            raise RuntimeError(
+                "ngrok authtoken 未成功写入配置文件: "
+                f"{config_file}"
+            )
 
     if verify:
         verify_authtoken_connectivity(ngrok_binary=ngrok_bin)
 
-    migrate_and_cleanup_legacy_tokens()
+    _clear_legacy_authtokens()
     return True
 
 
@@ -330,7 +404,7 @@ def verify_authtoken_connectivity(
             ngrok_bin,
             "http",
             target,
-            f"--config={config_file}",
+            f"--config={_config_path_arg(config_file)}",
             "--log=stdout",
         ],
         stdout=subprocess.PIPE,
@@ -411,6 +485,14 @@ def clear_authtoken_from_file(config_file: Path) -> bool:
 
     if isinstance(data, dict) and "authtoken" in data:
         del data["authtoken"]
+        removed = True
+
+    agent = data.get("agent") if isinstance(data, dict) else None
+    if isinstance(agent, dict) and "authtoken" in agent:
+        del agent["authtoken"]
+        removed = True
+
+    if isinstance(data, dict) and removed:
         config_file.write_text(
             yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
             encoding="utf-8",
