@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
@@ -99,13 +100,69 @@ def ngrok_config_path() -> Path:
     return ngrok_config_dir() / NGROK_CONFIG_FILE_NAME
 
 
+def legacy_ngrok_config_paths() -> list[Path]:
+    """旧版 ngrok 可能存放 authtoken 的配置路径（不含主配置）。"""
+    primary = ngrok_config_path()
+    candidates: list[Path] = [
+        Path.home() / ".ngrok2" / NGROK_CONFIG_FILE_NAME,
+    ]
+    if sys.platform == "win32":
+        appdata = Path(
+            os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")
+        )
+        candidates.append(appdata / "ngrok" / NGROK_CONFIG_FILE_NAME)
+
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate == primary:
+            continue
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        paths.append(candidate)
+    return paths
+
+
 def ngrok_config_paths() -> list[Path]:
     """所有可能存放 ngrok authtoken 的配置文件路径。"""
-    paths = [ngrok_config_path()]
-    legacy = Path.home() / ".ngrok2" / NGROK_CONFIG_FILE_NAME
-    if legacy not in paths:
-        paths.append(legacy)
-    return paths
+    return [ngrok_config_path(), *legacy_ngrok_config_paths()]
+
+
+@dataclass(frozen=True)
+class LegacyTokenCleanupResult:
+    migrated_from: Path | None = None
+    cleared_paths: tuple[Path, ...] = field(default_factory=tuple)
+    migrated_token: bool = False
+
+    @property
+    def changed(self) -> bool:
+        return self.migrated_token or bool(self.cleared_paths)
+
+
+def migrate_and_cleanup_legacy_tokens() -> LegacyTokenCleanupResult:
+    """将旧版路径中的 token 迁移到主配置，并清除所有旧版 token。"""
+    primary = ngrok_config_path()
+    primary_token = read_authtoken_from_file(primary)
+    migrated_from: Path | None = None
+    cleared_paths: list[Path] = []
+
+    for legacy_path in legacy_ngrok_config_paths():
+        legacy_token = read_authtoken_from_file(legacy_path)
+        if legacy_token and not primary_token:
+            write_authtoken_to_config(primary, legacy_token)
+            primary_token = legacy_token
+            migrated_from = legacy_path
+
+        if clear_authtoken_from_file(legacy_path):
+            cleared_paths.append(legacy_path)
+
+    return LegacyTokenCleanupResult(
+        migrated_from=migrated_from,
+        cleared_paths=tuple(cleared_paths),
+        migrated_token=migrated_from is not None,
+    )
 
 
 def read_authtoken_from_file(config_file: Path) -> str | None:
@@ -219,10 +276,6 @@ def configure_authtoken(
     config_file.parent.mkdir(parents=True, exist_ok=True)
     stop_ngrok_processes()
 
-    legacy_config = Path.home() / ".ngrok2" / NGROK_CONFIG_FILE_NAME
-    if legacy_config.is_file() and legacy_config != config_file:
-        clear_authtoken_from_file(legacy_config)
-
     config_path_arg = config_file.resolve().as_posix()
     result = subprocess.run(
         [
@@ -258,6 +311,7 @@ def configure_authtoken(
     if verify:
         verify_authtoken_connectivity(ngrok_binary=ngrok_bin)
 
+    migrate_and_cleanup_legacy_tokens()
     return True
 
 

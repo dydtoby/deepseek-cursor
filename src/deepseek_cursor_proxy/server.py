@@ -28,7 +28,7 @@ from .logging import (
 from .reasoning_store import ReasoningStore, conversation_scope
 from .streaming import CursorReasoningDisplayAdapter, StreamAccumulator
 from .trace import TraceRequest, TraceWriter
-from .ngrok_manager import ngrok_config_path
+from .ngrok_manager import migrate_and_cleanup_legacy_tokens, ngrok_config_path
 from .tunnel import NgrokTunnel, local_tunnel_target
 from .transform import (
     RECOVERY_NOTICE_CONTENT,
@@ -1298,6 +1298,14 @@ def main(argv: list[str] | None = None) -> int:
         config = replace(config, **updates)
 
     configure_logging(verbose=config.verbose)
+    legacy_cleanup = migrate_and_cleanup_legacy_tokens()
+    if legacy_cleanup.migrated_token and legacy_cleanup.migrated_from is not None:
+        LOG.info(
+            "Migrated ngrok authtoken from legacy config: %s",
+            legacy_cleanup.migrated_from,
+        )
+    for legacy_path in legacy_cleanup.cleared_paths:
+        LOG.info("Cleared legacy ngrok authtoken: %s", legacy_path)
     warn_if_insecure_upstream(config.upstream_base_url)
     store = ReasoningStore(
         config.reasoning_content_path,

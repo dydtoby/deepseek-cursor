@@ -7,6 +7,7 @@ import unittest
 from deepseek_cursor_proxy.ngrok_manager import (
     clear_authtoken_from_file,
     is_missing_authtoken_error,
+    migrate_and_cleanup_legacy_tokens,
     read_authtoken,
     read_authtoken_from_file,
     write_authtoken_to_config,
@@ -69,6 +70,61 @@ class NgrokManagerTests(unittest.TestCase):
             config_file = Path(temp_dir) / "ngrok" / "ngrok.yml"
             write_authtoken_to_config(config_file, "saved-token")
             self.assertEqual(read_authtoken_from_file(config_file), "saved-token")
+
+    def test_migrate_and_cleanup_legacy_tokens_moves_token_to_primary(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            primary_dir = Path(temp_dir) / "local" / "ngrok"
+            legacy_dir = Path(temp_dir) / ".ngrok2"
+            primary_dir.mkdir(parents=True)
+            legacy_dir.mkdir()
+            primary_file = primary_dir / "ngrok.yml"
+            legacy_file = legacy_dir / "ngrok.yml"
+            legacy_file.write_text('authtoken: legacy-token\n', encoding="utf-8")
+
+            import deepseek_cursor_proxy.ngrok_manager as ngrok_manager
+
+            original_primary = ngrok_manager.ngrok_config_path
+            original_legacy = ngrok_manager.legacy_ngrok_config_paths
+            try:
+                ngrok_manager.ngrok_config_path = lambda: primary_file  # type: ignore[assignment]
+                ngrok_manager.legacy_ngrok_config_paths = lambda: [legacy_file]  # type: ignore[assignment]
+                result = migrate_and_cleanup_legacy_tokens()
+            finally:
+                ngrok_manager.ngrok_config_path = original_primary  # type: ignore[assignment]
+                ngrok_manager.legacy_ngrok_config_paths = original_legacy  # type: ignore[assignment]
+
+            self.assertTrue(result.migrated_token)
+            self.assertEqual(result.migrated_from, legacy_file)
+            self.assertIn(legacy_file, result.cleared_paths)
+            self.assertEqual(read_authtoken_from_file(primary_file), "legacy-token")
+            self.assertIsNone(read_authtoken_from_file(legacy_file))
+
+    def test_migrate_and_cleanup_legacy_tokens_clears_stale_copy(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            primary_dir = Path(temp_dir) / "local" / "ngrok"
+            legacy_dir = Path(temp_dir) / ".ngrok2"
+            primary_dir.mkdir(parents=True)
+            legacy_dir.mkdir()
+            primary_file = primary_dir / "ngrok.yml"
+            legacy_file = legacy_dir / "ngrok.yml"
+            primary_file.write_text('authtoken: primary-token\n', encoding="utf-8")
+            legacy_file.write_text('authtoken: stale-token\n', encoding="utf-8")
+
+            import deepseek_cursor_proxy.ngrok_manager as ngrok_manager
+
+            original_primary = ngrok_manager.ngrok_config_path
+            original_legacy = ngrok_manager.legacy_ngrok_config_paths
+            try:
+                ngrok_manager.ngrok_config_path = lambda: primary_file  # type: ignore[assignment]
+                ngrok_manager.legacy_ngrok_config_paths = lambda: [legacy_file]  # type: ignore[assignment]
+                result = migrate_and_cleanup_legacy_tokens()
+            finally:
+                ngrok_manager.ngrok_config_path = original_primary  # type: ignore[assignment]
+                ngrok_manager.legacy_ngrok_config_paths = original_legacy  # type: ignore[assignment]
+
+            self.assertFalse(result.migrated_token)
+            self.assertEqual(read_authtoken_from_file(primary_file), "primary-token")
+            self.assertIsNone(read_authtoken_from_file(legacy_file))
 
 
 if __name__ == "__main__":

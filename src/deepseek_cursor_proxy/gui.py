@@ -28,6 +28,7 @@ from .ngrok_manager import (
     find_ngrok_binary,
     has_authtoken_configured,
     is_missing_authtoken_error,
+    migrate_and_cleanup_legacy_tokens,
     validate_authtoken,
 )
 from .server import DeepSeekProxyHandler, DeepSeekProxyServer
@@ -1305,8 +1306,19 @@ class DeepSeekProxyGUI:
 # ---------------------------------------------------------------------------
 
 
+def _log_legacy_token_cleanup() -> None:
+    result = migrate_and_cleanup_legacy_tokens()
+    if result.migrated_token and result.migrated_from is not None:
+        LOG.info(
+            t("proxy.log.legacy_token_migrated", path=result.migrated_from)
+        )
+    for path in result.cleared_paths:
+        LOG.info(t("proxy.log.legacy_token_cleared", path=path))
+
+
 def run_gui(cli_config: dict[str, Any] | None = None) -> None:
     """启动 GUI 应用。"""
     init_locale()
+    _log_legacy_token_cleanup()
     app = DeepSeekProxyGUI(cli_config=cli_config)
     app.run()
