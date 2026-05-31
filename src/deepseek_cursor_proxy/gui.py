@@ -27,6 +27,7 @@ from .ngrok_manager import (
     configure_authtoken,
     find_ngrok_binary,
     has_authtoken_configured,
+    is_missing_authtoken_error,
     validate_authtoken,
 )
 from .server import DeepSeekProxyHandler, DeepSeekProxyServer
@@ -160,12 +161,15 @@ class ProxyController:
                         t("proxy.log.cursor_base", url=f"{public_url.rstrip('/')}/v1")
                     )
                 except Exception as exc:
+                    error_text = str(exc)
+                    if is_missing_authtoken_error(error_text):
+                        error_text = t("proxy.ngrok_auth_missing")
                     self._emit_status(
                         state="error",
-                        message=t("proxy.ngrok_failed", error=exc),
+                        message=t("proxy.ngrok_failed", error=error_text),
                         local_url=local_url,
                     )
-                    LOG.error(t("proxy.ngrok_failed", error=exc))
+                    LOG.error(t("proxy.ngrok_failed", error=error_text))
                     LOG.info(t("proxy.log.local_running", url=local_url))
             else:
                 self._emit_status(
@@ -1250,6 +1254,10 @@ class DeepSeekProxyGUI:
             self._dashboard.destroy()
             self._dashboard = None
         self._show_wizard()
+        if self._wizard is not None:
+            self._wizard._token_var.set("")
+            self._wizard._api_key_var.set("")
+            self._wizard._show_step(1)
 
     def _reload_interface(self) -> None:
         if self._controller.is_running:

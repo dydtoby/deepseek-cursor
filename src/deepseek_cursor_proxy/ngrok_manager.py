@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -12,6 +13,8 @@ from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
+
+import yaml
 
 from .tunnel import (
     DEFAULT_NGROK_API_URL,
@@ -96,39 +99,185 @@ def ngrok_config_path() -> Path:
     return ngrok_config_dir() / NGROK_CONFIG_FILE_NAME
 
 
-def configure_authtoken(token: str, ngrok_binary: str | None = None) -> bool:
-    """运行 `ngrok config add-authtoken <token>`。
+def ngrok_config_paths() -> list[Path]:
+    """所有可能存放 ngrok authtoken 的配置文件路径。"""
+    paths = [ngrok_config_path()]
+    legacy = Path.home() / ".ngrok2" / NGROK_CONFIG_FILE_NAME
+    if legacy not in paths:
+        paths.append(legacy)
+    return paths
 
-    返回 True 表示配置成功。
-    """
+
+def read_authtoken_from_file(config_file: Path) -> str | None:
+    if not config_file.is_file():
+        return None
+    try:
+        content = config_file.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    try:
+        data = yaml.safe_load(content)
+    except yaml.YAMLError:
+        data = None
+    if isinstance(data, dict):
+        token = data.get("authtoken")
+        if isinstance(token, str) and token.strip():
+            return token.strip()
+
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("authtoken:"):
+            value = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+            if value:
+                return value
+    return None
+
+
+def read_authtoken() -> str | None:
+    """读取当前生效的 ngrok authtoken。"""
+    for config_file in ngrok_config_paths():
+        token = read_authtoken_from_file(config_file)
+        if token:
+            return token
+    return None
+
+
+def stop_ngrok_processes() -> None:
+    """停止可能占用 4040 端口或缓存旧会话的 ngrok 进程。"""
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/IM", "ngrok.exe", "/F"],
+            capture_output=True,
+            text=True,
+        )
+        return
+
+    subprocess.run(
+        ["pkill", "-f", "ngrok"],
+        capture_output=True,
+        text=True,
+    )
+
+
+def configure_authtoken(
+    token: str,
+    ngrok_binary: str | None = None,
+    *,
+    verify: bool = True,
+) -> bool:
+    """运行 `ngrok config add-authtoken <token>` 并验证写入结果。"""
+    stripped = token.strip()
+    if not stripped:
+        raise ValueError("ngrok authtoken 不能为空")
+
     ngrok_bin = ngrok_binary or find_ngrok_binary()
+    config_file = ngrok_config_path()
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    stop_ngrok_processes()
+
     result = subprocess.run(
-        [ngrok_bin, "config", "add-authtoken", token.strip()],
+        [
+            ngrok_bin,
+            "config",
+            "add-authtoken",
+            stripped,
+            f"--config={config_file}",
+        ],
         capture_output=True,
         text=True,
         timeout=30,
     )
     if result.returncode != 0:
-        stderr = result.stderr.strip()
+        stderr = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(
             f"ngrok authtoken 配置失败（退出码 {result.returncode}）:\n{stderr}"
         )
+
+    saved = read_authtoken()
+    if saved != stripped:
+        raise RuntimeError(
+            "ngrok authtoken 未成功写入配置文件: "
+            f"{config_file}"
+        )
+
+    if verify:
+        verify_authtoken_connectivity(ngrok_binary=ngrok_bin)
+
     return True
 
 
-def validate_authtoken() -> bool:
-    """检查 ngrok authtoken 是否已配置。
-
-    通过检查 ngrok 配置文件是否存在且包含 authtoken 字段。
-    """
+def verify_authtoken_connectivity(
+    ngrok_binary: str | None = None,
+    timeout: float = 8.0,
+) -> None:
+    """验证 authtoken 能建立 ngrok 隧道会话。"""
+    ngrok_bin = ngrok_binary or find_ngrok_binary()
     config_file = ngrok_config_path()
-    if not config_file.is_file():
-        return False
+    probe_port = random.randint(20000, 40000)
+    target = f"127.0.0.1:{probe_port}"
+
+    proc = subprocess.Popen(
+        [
+            ngrok_bin,
+            "http",
+            target,
+            f"--config={config_file}",
+            "--log=stdout",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    collected: list[str] = []
     try:
-        content = config_file.read_text(encoding="utf-8")
-        return "authtoken:" in content
-    except OSError:
-        return False
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if proc.stdout is not None:
+                line = proc.stdout.readline()
+                if line:
+                    collected.append(line)
+                    lowered = line.lower()
+                    if "started tunnel" in lowered or "tunnel session started" in lowered:
+                        return
+                    if "authentication failed" in lowered or "err_ngrok_" in lowered:
+                        raise RuntimeError("".join(collected).strip())
+
+            if proc.poll() is not None:
+                output = "".join(collected)
+                if proc.stdout is not None:
+                    output += proc.stdout.read()
+                if "started tunnel" in output.lower():
+                    return
+                if output.strip():
+                    raise RuntimeError(output.strip())
+                raise RuntimeError("ngrok exited before authtoken verification completed")
+
+            time.sleep(0.1)
+
+        raise RuntimeError("Timed out verifying ngrok authtoken")
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=3)
+
+
+def validate_authtoken() -> bool:
+    """检查 ngrok authtoken 是否已配置且非空。"""
+    return read_authtoken() is not None
+
+
+def is_missing_authtoken_error(message: str) -> bool:
+    """判断 ngrok 报错是否由缺失/无效 authtoken 引起。"""
+    normalized = message.lower()
+    return (
+        "err_ngrok_4018" in normalized
+        or "requires a verified account and authtoken" in normalized
+    )
 
 
 def has_authtoken_configured() -> bool:
@@ -136,23 +285,32 @@ def has_authtoken_configured() -> bool:
     return validate_authtoken()
 
 
-def clear_authtoken() -> bool:
-    """从 ngrok 配置文件中移除 authtoken。
-
-    返回 True 表示 authtoken 已被移除；False 表示未找到 authtoken 或配置文件。
-    """
-    config_file = ngrok_config_path()
+def clear_authtoken_from_file(config_file: Path) -> bool:
+    """从单个 ngrok 配置文件中移除 authtoken。"""
     if not config_file.is_file():
         return False
 
     try:
-        lines = config_file.read_text(encoding="utf-8").splitlines()
+        content = config_file.read_text(encoding="utf-8")
     except OSError:
         return False
 
-    kept_lines: list[str] = []
     removed = False
-    for line in lines:
+    try:
+        data = yaml.safe_load(content)
+    except yaml.YAMLError:
+        data = None
+
+    if isinstance(data, dict) and "authtoken" in data:
+        del data["authtoken"]
+        config_file.write_text(
+            yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        return True
+
+    kept_lines: list[str] = []
+    for line in content.splitlines():
         stripped = line.strip()
         if stripped.startswith("authtoken:") or stripped.startswith("authtoken "):
             removed = True
@@ -167,6 +325,16 @@ def clear_authtoken() -> bool:
         text += "\n"
     config_file.write_text(text, encoding="utf-8")
     return True
+
+
+def clear_authtoken() -> bool:
+    """从所有 ngrok 配置文件中移除 authtoken。"""
+    stop_ngrok_processes()
+    cleared_any = False
+    for config_file in ngrok_config_paths():
+        if clear_authtoken_from_file(config_file):
+            cleared_any = True
+    return cleared_any
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +378,7 @@ class NgrokTunnelManager:
             target_url=target,
             ngrok_url=self._ngrok_url,
             command=ngrok_bin,
+            config_path=str(ngrok_config_path()),
             startup_timeout=self._startup_timeout,
         )
         self._public_url = self._tunnel.start()

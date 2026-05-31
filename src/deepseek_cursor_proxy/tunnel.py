@@ -187,6 +187,7 @@ class NgrokTunnel:
     target_url: str
     ngrok_url: str | None = None
     command: str = "ngrok"
+    config_path: str | None = None
     api_url: str = DEFAULT_NGROK_API_URL
     startup_timeout: float = 15.0
 
@@ -210,6 +211,8 @@ class NgrokTunnel:
             )
 
         argv = [self.command, "http", self.target_url]
+        if self.config_path:
+            argv.append(f"--config={self.config_path}")
         if self.ngrok_url:
             argv.append(f"--url={self.ngrok_url}")
 

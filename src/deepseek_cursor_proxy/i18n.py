@@ -113,6 +113,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "proxy.stopped": "代理已停止",
         "proxy.start_failed": "启动失败: {error}",
         "proxy.ngrok_failed": "ngrok 隧道启动失败: {error}",
+        "proxy.ngrok_auth_missing": (
+            "ngrok 未检测到有效 authtoken。请在引导页重新粘贴 "
+            "https://dashboard.ngrok.com/get-started/your-authtoken 中的 token。"
+        ),
         "proxy.log.ngrok_url": "ngrok 公网 URL: {url}",
         "proxy.log.cursor_base": "Cursor Base URL: {url}",
         "proxy.log.local_running": "本地代理仍在运行: {url}",
@@ -221,6 +225,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "proxy.stopped": "Proxy stopped",
         "proxy.start_failed": "Failed to start: {error}",
         "proxy.ngrok_failed": "Failed to start ngrok tunnel: {error}",
+        "proxy.ngrok_auth_missing": (
+            "ngrok does not have a valid authtoken. Paste the token from "
+            "https://dashboard.ngrok.com/get-started/your-authtoken in the setup wizard."
+        ),
         "proxy.log.ngrok_url": "ngrok public URL: {url}",
         "proxy.log.cursor_base": "Cursor Base URL: {url}",
         "proxy.log.local_running": "Local proxy still running: {url}",

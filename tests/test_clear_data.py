@@ -34,7 +34,8 @@ class ClearDataTests(unittest.TestCase):
                 self.assertTrue(clear_authtoken())
                 self.assertFalse(has_authtoken_configured())
                 content = config_file.read_text(encoding="utf-8")
-                self.assertIn('version: "2"', content)
+                self.assertIn("version:", content)
+                self.assertIn("region: us", content)
                 self.assertNotIn("authtoken:", content)
             finally:
                 ngrok_manager.ngrok_config_path = original  # type: ignore[assignment]

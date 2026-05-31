@@ -28,6 +28,7 @@ from .logging import (
 from .reasoning_store import ReasoningStore, conversation_scope
 from .streaming import CursorReasoningDisplayAdapter, StreamAccumulator
 from .trace import TraceRequest, TraceWriter
+from .ngrok_manager import ngrok_config_path
 from .tunnel import NgrokTunnel, local_tunnel_target
 from .transform import (
     RECOVERY_NOTICE_CONTENT,
@@ -1325,7 +1326,11 @@ def main(argv: list[str] | None = None) -> int:
     public_url: str | None = None
     if config.ngrok:
         target_url = local_tunnel_target(config.host, config.port)
-        tunnel = NgrokTunnel(target_url, ngrok_url=config.ngrok_url)
+        tunnel = NgrokTunnel(
+            target_url,
+            ngrok_url=config.ngrok_url,
+            config_path=str(ngrok_config_path()),
+        )
         try:
             public_url = tunnel.start()
         except RuntimeError as exc:

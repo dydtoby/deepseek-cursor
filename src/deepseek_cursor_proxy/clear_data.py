@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .config import ProxyConfig
-from .ngrok_manager import clear_authtoken, has_authtoken_configured
+from .ngrok_manager import clear_authtoken, has_authtoken_configured, stop_ngrok_processes
 from .reasoning_store import ReasoningStore
 
 
@@ -33,6 +33,7 @@ def clear_local_data(
 
     if clear_token:
         try:
+            stop_ngrok_processes()
             authtoken_cleared = clear_authtoken()
         except OSError as exc:
             errors.append(str(exc))
