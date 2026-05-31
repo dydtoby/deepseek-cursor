@@ -127,7 +127,13 @@ def read_authtoken_from_file(config_file: Path) -> str | None:
 
     for line in content.splitlines():
         stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
         if stripped.startswith("authtoken:"):
+            value = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+            if value:
+                return value
+        if stripped.startswith("- authtoken:"):
             value = stripped.split(":", 1)[1].strip().strip('"').strip("'")
             if value:
                 return value
@@ -135,12 +141,49 @@ def read_authtoken_from_file(config_file: Path) -> str | None:
 
 
 def read_authtoken() -> str | None:
-    """读取当前生效的 ngrok authtoken。"""
-    for config_file in ngrok_config_paths():
-        token = read_authtoken_from_file(config_file)
-        if token:
-            return token
-    return None
+    """读取当前生效的 ngrok authtoken（仅主配置文件）。"""
+    return read_authtoken_from_file(ngrok_config_path())
+
+
+def write_authtoken_to_config(config_file: Path, token: str) -> None:
+    """将 authtoken 直接写入 ngrok 配置文件。"""
+    stripped = token.strip()
+    if not stripped:
+        raise ValueError("ngrok authtoken 不能为空")
+
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    data: dict[str, Any] = {}
+    if config_file.is_file():
+        try:
+            loaded = yaml.safe_load(config_file.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            loaded = None
+        if isinstance(loaded, dict):
+            data = loaded
+
+    if "version" not in data:
+        data["version"] = "2"
+    data["authtoken"] = stripped
+    config_file.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def wait_for_authtoken_in_file(
+    config_file: Path,
+    expected: str,
+    *,
+    timeout: float = 2.0,
+) -> str | None:
+    """等待配置文件中出现期望的 authtoken。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        saved = read_authtoken_from_file(config_file)
+        if saved == expected:
+            return saved
+        time.sleep(0.1)
+    return read_authtoken_from_file(config_file)
 
 
 def stop_ngrok_processes() -> None:
@@ -176,13 +219,18 @@ def configure_authtoken(
     config_file.parent.mkdir(parents=True, exist_ok=True)
     stop_ngrok_processes()
 
+    legacy_config = Path.home() / ".ngrok2" / NGROK_CONFIG_FILE_NAME
+    if legacy_config.is_file() and legacy_config != config_file:
+        clear_authtoken_from_file(legacy_config)
+
+    config_path_arg = config_file.resolve().as_posix()
     result = subprocess.run(
         [
             ngrok_bin,
             "config",
             "add-authtoken",
             stripped,
-            f"--config={config_file}",
+            f"--config={config_path_arg}",
         ],
         capture_output=True,
         text=True,
@@ -190,11 +238,17 @@ def configure_authtoken(
     )
     if result.returncode != 0:
         stderr = (result.stderr or result.stdout or "").strip()
-        raise RuntimeError(
-            f"ngrok authtoken 配置失败（退出码 {result.returncode}）:\n{stderr}"
-        )
+        write_authtoken_to_config(config_file, stripped)
+        if read_authtoken_from_file(config_file) != stripped:
+            raise RuntimeError(
+                f"ngrok authtoken 配置失败（退出码 {result.returncode}）:\n{stderr}"
+            )
+    else:
+        saved = wait_for_authtoken_in_file(config_file, stripped)
+        if saved != stripped:
+            write_authtoken_to_config(config_file, stripped)
 
-    saved = read_authtoken()
+    saved = read_authtoken_from_file(config_file)
     if saved != stripped:
         raise RuntimeError(
             "ngrok authtoken 未成功写入配置文件: "
