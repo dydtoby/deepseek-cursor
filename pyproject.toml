@@ -16,6 +16,8 @@ keywords = ["cursor", "deepseek", "proxy", "llm", "openai-compatible", "reasonin
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
+    "Environment :: Win32 (MS Windows)",
+    "Environment :: X11 Applications :: GTK",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -35,9 +37,13 @@ dev = [
     "pre-commit>=3.0.0",
     "ruff>=0.3.0",
 ]
+build = [
+    "pyinstaller>=6.0",
+]
 
 [project.scripts]
-deepseek-cursor-proxy = "deepseek_cursor_proxy.server:main"
+deepseek-cursor-proxy = "deepseek_cursor_proxy.app:main"
+deepseek-cursor-proxy-gui = "deepseek_cursor_proxy.gui:run_gui"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
