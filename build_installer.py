@@ -23,7 +23,7 @@ FREEZE_OUTPUT = DIST_DIR / "DeepSeekCursorProxy"
 INSTALLER_OUTPUT = DIST_DIR / "DeepSeekCursorProxy-Setup.exe"
 
 APP_NAME = "DeepSeek Cursor Proxy"
-APP_VERSION = "0.1.1"
+APP_VERSION = "0.1.2"
 APP_PUBLISHER = "DeepSeek Cursor Proxy"
 
 INNO_SETUP_PATHS = [
