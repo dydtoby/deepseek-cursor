@@ -16,8 +16,9 @@ keywords = ["cursor", "deepseek", "proxy", "llm", "openai-compatible", "reasonin
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
+    "Environment :: MacOS X",
     "Environment :: Win32 (MS Windows)",
-    "Environment :: X11 Applications :: GTK",
+    "Operating System :: POSIX :: Linux",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",

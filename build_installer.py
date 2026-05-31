@@ -1,26 +1,20 @@
-"""DeepSeek Cursor Proxy 构建流水线。
+"""DeepSeek Cursor Proxy 跨平台构建流水线。
 
 用法:
-  python build_installer.py              # 完整构建（PyInstaller + ngrok + InnoSetup）
+  python build_installer.py              # 完整构建（PyInstaller + ngrok + Windows InnoSetup）
   python build_installer.py --freeze-only # 仅 PyInstaller 冻结
-  python build_installer.py --installer-only # 仅生成安装程序（需要先冻结）
+  python build_installer.py --installer-only # 仅生成 Windows 安装程序（需要先冻结）
   python build_installer.py --clean       # 清理构建产物
 """
 
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import subprocess
 import sys
 import zipfile
 from pathlib import Path
-from urllib.request import urlretrieve
-
-# ---------------------------------------------------------------------------
-# 路径配置
-# ---------------------------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DIST_DIR = PROJECT_ROOT / "dist"
@@ -31,22 +25,22 @@ INSTALLER_OUTPUT = DIST_DIR / "DeepSeekCursorProxy-Setup.exe"
 APP_NAME = "DeepSeek Cursor Proxy"
 APP_VERSION = "0.1.1"
 APP_PUBLISHER = "DeepSeek Cursor Proxy"
-APP_EXE_NAME = "DeepSeekCursorProxy.exe"
 
-# InnoSetup 路径（常见安装位置）
 INNO_SETUP_PATHS = [
     r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
     r"C:\Program Files\Inno Setup 6\ISCC.exe",
     r"C:\Program Files (x86)\Inno Setup 5\ISCC.exe",
 ]
 
-# ngrok 下载 URL
-NGROK_DOWNLOAD_URL = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
-
-
-# ---------------------------------------------------------------------------
-# 辅助函数
-# ---------------------------------------------------------------------------
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+from deepseek_cursor_proxy.platform_support import (  # noqa: E402
+    app_executable_name,
+    download_ngrok_binary,
+    ngrok_binary_name,
+    portable_archive_suffix,
+    pyinstaller_add_data_sep,
+    system_slug,
+)
 
 
 def ensure_dir(path: Path) -> Path:
@@ -55,7 +49,8 @@ def ensure_dir(path: Path) -> Path:
 
 
 def find_inno_setup() -> str | None:
-    """查找 InnoSetup 编译器。"""
+    if sys.platform != "win32":
+        return None
     for path in INNO_SETUP_PATHS:
         if Path(path).is_file():
             return path
@@ -63,7 +58,6 @@ def find_inno_setup() -> str | None:
 
 
 def run_cmd(cmd: list[str], cwd: Path | None = None, desc: str = "") -> None:
-    """运行命令并打印输出。"""
     print(f"\n{'='*60}")
     print(f"  {desc}")
     print(f"  {' '.join(cmd)}")
@@ -74,16 +68,13 @@ def run_cmd(cmd: list[str], cwd: Path | None = None, desc: str = "") -> None:
         sys.exit(1)
 
 
-# ---------------------------------------------------------------------------
-# 步骤 1: PyInstaller 冻结
-# ---------------------------------------------------------------------------
+def step_generate_icon() -> Path | None:
+    if sys.platform != "win32":
+        print("\n[步骤 0/3] 跳过 .ico 生成（非 Windows 平台）")
+        return None
 
-
-def step_generate_icon() -> Path:
-    """生成多尺寸 Windows .ico 文件。"""
     print("\n[步骤 0/3] 生成应用图标...")
     icon_path = PROJECT_ROOT / "assets" / "app_icon.ico"
-    sys.path.insert(0, str(PROJECT_ROOT))
     from generate_icon import generate_icon
 
     generate_icon(icon_path)
@@ -95,77 +86,104 @@ def step_generate_icon() -> Path:
 
 
 def step_freeze() -> Path:
-    """使用 PyInstaller 将 Python 应用冻结为独立目录。"""
-    print("\n[步骤 1/3] PyInstaller 冻结...")
+    print(f"\n[步骤 1/3] PyInstaller 冻结 ({system_slug()})...")
 
     output_dir = DIST_DIR / "DeepSeekCursorProxy"
     if output_dir.exists():
         shutil.rmtree(output_dir)
 
     icon_path = step_generate_icon()
-    icon_arg = ["--icon", str(icon_path)]
+    assets_src = PROJECT_ROOT / "assets"
+    add_data = f"{assets_src}{pyinstaller_add_data_sep()}assets"
 
     cmd = [
-        sys.executable, "-m", "PyInstaller",
-        "--name", "DeepSeekCursorProxy",
+        sys.executable,
+        "-m",
+        "PyInstaller",
+        "--name",
+        "DeepSeekCursorProxy",
         "--onedir",
-        "--windowed",  # Windows GUI 模式（不显示控制台）
         "--noconfirm",
         "--clean",
-        "--paths", str(PROJECT_ROOT / "src"),
-        "--collect-submodules", "deepseek_cursor_proxy",
-        "--add-data", f"{PROJECT_ROOT / 'assets'};assets",
-        *icon_arg,
-        "--hidden-import", "deepseek_cursor_proxy.gui",
-        "--hidden-import", "deepseek_cursor_proxy.server",
-        "--hidden-import", "deepseek_cursor_proxy.config",
-        "--hidden-import", "deepseek_cursor_proxy.ngrok_manager",
-        "--hidden-import", "deepseek_cursor_proxy.tunnel",
-        "--hidden-import", "deepseek_cursor_proxy.reasoning_store",
-        "--hidden-import", "deepseek_cursor_proxy.transform",
-        "--hidden-import", "deepseek_cursor_proxy.streaming",
-        "--hidden-import", "deepseek_cursor_proxy.trace",
-        "--hidden-import", "deepseek_cursor_proxy.logging",
-        "--hidden-import", "deepseek_cursor_proxy.i18n",
-        "--hidden-import", "yaml",
+        "--paths",
+        str(PROJECT_ROOT / "src"),
+        "--collect-submodules",
+        "deepseek_cursor_proxy",
+        "--add-data",
+        add_data,
+        "--hidden-import",
+        "deepseek_cursor_proxy.gui",
+        "--hidden-import",
+        "deepseek_cursor_proxy.server",
+        "--hidden-import",
+        "deepseek_cursor_proxy.config",
+        "--hidden-import",
+        "deepseek_cursor_proxy.ngrok_manager",
+        "--hidden-import",
+        "deepseek_cursor_proxy.platform_support",
+        "--hidden-import",
+        "deepseek_cursor_proxy.tunnel",
+        "--hidden-import",
+        "deepseek_cursor_proxy.reasoning_store",
+        "--hidden-import",
+        "deepseek_cursor_proxy.transform",
+        "--hidden-import",
+        "deepseek_cursor_proxy.streaming",
+        "--hidden-import",
+        "deepseek_cursor_proxy.trace",
+        "--hidden-import",
+        "deepseek_cursor_proxy.logging",
+        "--hidden-import",
+        "deepseek_cursor_proxy.i18n",
+        "--hidden-import",
+        "yaml",
         str(PROJECT_ROOT / "launcher.py"),
     ]
 
+    if sys.platform in {"win32", "darwin"}:
+        cmd.insert(cmd.index("--onedir") + 1, "--windowed")
+    if icon_path is not None:
+        cmd.extend(["--icon", str(icon_path)])
+
     run_cmd(cmd, cwd=PROJECT_ROOT, desc="PyInstaller 冻结")
 
-    # 验证输出
-    exe_path = output_dir / f"{APP_EXE_NAME}"
+    exe_name = app_executable_name()
+    exe_path = output_dir / exe_name
     if not exe_path.is_file():
         print(f"\n[ERROR] 冻结产物未找到: {exe_path}")
         sys.exit(1)
 
     print(f"  冻结完成: {output_dir}")
 
-    # 复制安装脚本和图标到产物目录
-    install_bat_src = PROJECT_ROOT / "scripts" / "install.bat"
-    if install_bat_src.is_file():
-        shutil.copy2(install_bat_src, output_dir / "install.bat")
-    shutil.copy2(icon_path, output_dir / "app_icon.ico")
+    if sys.platform == "win32":
+        install_bat_src = PROJECT_ROOT / "scripts" / "install.bat"
+        if install_bat_src.is_file():
+            shutil.copy2(install_bat_src, output_dir / "install.bat")
+    else:
+        install_sh_src = PROJECT_ROOT / "scripts" / "install.sh"
+        if install_sh_src.is_file():
+            shutil.copy2(install_sh_src, output_dir / "install.sh")
+            (output_dir / "install.sh").chmod(0o755)
+
+    start_sh_src = PROJECT_ROOT / "scripts" / "start-proxy.sh"
+    if start_sh_src.is_file():
+        shutil.copy2(start_sh_src, output_dir / "start-proxy.sh")
+        (output_dir / "start-proxy.sh").chmod(0o755)
+
+    if icon_path is not None and icon_path.is_file():
+        shutil.copy2(icon_path, output_dir / "app_icon.ico")
 
     return output_dir
 
 
-# ---------------------------------------------------------------------------
-# 步骤 2: 下载 ngrok
-# ---------------------------------------------------------------------------
-
-
 def step_download_ngrok(freeze_dir: Path) -> Path:
-    """下载 ngrok.exe 并放入冻结目录。"""
     print("\n[步骤 2/3] 下载 ngrok...")
 
-    ngrok_exe = freeze_dir / "ngrok.exe"
-    if ngrok_exe.is_file():
-        print(f"  ngrok.exe 已存在: {ngrok_exe}")
-        return ngrok_exe
-
-    zip_path = freeze_dir / "ngrok.zip"
-    print(f"  下载: {NGROK_DOWNLOAD_URL}")
+    binary_name = ngrok_binary_name()
+    ngrok_path = freeze_dir / binary_name
+    if ngrok_path.is_file():
+        print(f"  {binary_name} 已存在: {ngrok_path}")
+        return ngrok_path
 
     def _report(block: int, block_size: int, total: int) -> None:
         downloaded = block * block_size
@@ -174,28 +192,25 @@ def step_download_ngrok(freeze_dir: Path) -> Path:
             print(f"\r  下载中... {pct}% ({downloaded:,} / {total:,} bytes)", end="")
 
     try:
-        urlretrieve(NGROK_DOWNLOAD_URL, zip_path, _report)
+        ngrok_path = download_ngrok_binary(freeze_dir, report=_report)
         print()
     except Exception as exc:
         print(f"\n[ERROR] ngrok 下载失败: {exc}")
-        print("请手动从 https://ngrok.com/download 下载 ngrok.exe")
-        print(f"并放入: {freeze_dir}")
+        print("请手动从 https://ngrok.com/download 下载 ngrok 并放入:")
+        print(f"  {freeze_dir / binary_name}")
         sys.exit(1)
 
-    print("  解压 ngrok...")
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extract("ngrok.exe", freeze_dir)
-
-    zip_path.unlink()
-    print(f"  ngrok.exe 已提取: {ngrok_exe}")
-    return ngrok_exe
+    print(f"  {binary_name} 已提取: {ngrok_path}")
+    return ngrok_path
 
 
 def step_create_zip(freeze_dir: Path) -> Path:
-    """将便携版目录打包为 ZIP。"""
     print("\n[步骤 4/4] 创建便携版 ZIP...")
 
-    zip_path = DIST_DIR / f"DeepSeekCursorProxy-v{APP_VERSION}-portable.zip"
+    zip_path = (
+        DIST_DIR
+        / f"DeepSeekCursorProxy-v{APP_VERSION}-portable-{portable_archive_suffix()}.zip"
+    )
     if zip_path.is_file():
         zip_path.unlink()
 
@@ -209,24 +224,15 @@ def step_create_zip(freeze_dir: Path) -> Path:
     return zip_path
 
 
-# ---------------------------------------------------------------------------
-# 步骤 3: InnoSetup 打包
-# ---------------------------------------------------------------------------
-
-
 def step_create_installer(freeze_dir: Path) -> Path:
-    """使用 InnoSetup 创建 Windows 安装程序。"""
     print("\n[步骤 3/3] InnoSetup 打包...")
 
     iscc = find_inno_setup()
     if iscc is None:
-        print("\n[WARNING] 未找到 InnoSetup 编译器。")
-        print("请从 https://jrsoftware.org/isinfo.php 安装 InnoSetup 6。")
+        print("\n[WARNING] 未找到 InnoSetup（仅 Windows 可用）。")
         print(f"\n冻结产物已就绪: {freeze_dir}")
-        print("你可以手动创建安装程序，或直接分发此文件夹。")
         return freeze_dir
 
-    # 生成临时 .iss 文件
     iss_content = _generate_iss(freeze_dir)
     iss_path = BUILD_DIR / "installer.iss"
     ensure_dir(BUILD_DIR)
@@ -244,14 +250,13 @@ def step_create_installer(freeze_dir: Path) -> Path:
 
 
 def _generate_iss(freeze_dir: Path) -> str:
-    """生成 InnoSetup 脚本。"""
+    exe_name = app_executable_name()
     return f'''; InnoSetup 脚本 — 由 build_installer.py 自动生成
-; DeepSeek Cursor Proxy Windows 安装程序
 
 #define MyAppName "{APP_NAME}"
 #define MyAppVersion "{APP_VERSION}"
 #define MyAppPublisher "{APP_PUBLISHER}"
-#define MyAppExeName "{APP_EXE_NAME}"
+#define MyAppExeName "{exe_name}"
 
 [Setup]
 AppId={{{F1A2B3C4-D5E6-7890-ABCD-EF1234567890}}}
@@ -287,26 +292,10 @@ Name: "{{commondesktop}}\\{{#MyAppName}}"; Filename: "{{app}}\\{{#MyAppExeName}}
 
 [Run]
 Filename: "{{app}}\\{{#MyAppExeName}}"; Description: "启动 {{#MyAppName}}"; Flags: nowait postinstall skipifsilent
-
-[Code]
-// 安装后自动运行
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  if CurStep = ssPostInstall then
-  begin
-    // 安装程序会自动运行 [Run] 部分
-  end;
-end;
 '''
 
 
-# ---------------------------------------------------------------------------
-# 清理
-# ---------------------------------------------------------------------------
-
-
 def step_clean() -> None:
-    """清理构建产物。"""
     print("\n[清理] 删除构建产物...")
     for path in [DIST_DIR, BUILD_DIR]:
         if path.exists():
@@ -317,15 +306,9 @@ def step_clean() -> None:
         print(f"  已删除: {spec}")
 
 
-# ---------------------------------------------------------------------------
-# 主流水线
-# ---------------------------------------------------------------------------
-
-
 def build_full() -> None:
-    """完整构建流水线。"""
     print("=" * 60)
-    print(f"  {APP_NAME} 构建流水线 v{APP_VERSION}")
+    print(f"  {APP_NAME} 构建流水线 v{APP_VERSION} ({system_slug()})")
     print("=" * 60)
 
     freeze_dir = step_freeze()
@@ -344,21 +327,13 @@ def build_full() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="DeepSeek Cursor Proxy 构建工具")
-    parser.add_argument(
-        "--freeze-only",
-        action="store_true",
-        help="仅执行 PyInstaller 冻结",
-    )
+    parser.add_argument("--freeze-only", action="store_true", help="仅执行 PyInstaller 冻结")
     parser.add_argument(
         "--installer-only",
         action="store_true",
-        help="仅生成安装程序（需要先冻结）",
+        help="仅生成 Windows 安装程序（需要先冻结）",
     )
-    parser.add_argument(
-        "--clean",
-        action="store_true",
-        help="清理所有构建产物",
-    )
+    parser.add_argument("--clean", action="store_true", help="清理所有构建产物")
     args = parser.parse_args()
 
     if args.clean:

@@ -33,6 +33,7 @@ from .ngrok_manager import (
 )
 from .server import DeepSeekProxyHandler, DeepSeekProxyServer
 from .reasoning_store import ReasoningStore
+from .platform_support import gui_fonts
 from .tunnel import local_tunnel_target
 
 LOG = logging.getLogger("deepseek_cursor_proxy.gui")
@@ -236,14 +237,7 @@ COLORS = {
     "border": "#45475a",
 }
 
-FONTS = {
-    "title": ("Segoe UI", 16, "bold"),
-    "heading": ("Segoe UI", 13, "bold"),
-    "body": ("Segoe UI", 11),
-    "mono": ("Cascadia Code", 10),
-    "url": ("Cascadia Code", 11),
-    "small": ("Segoe UI", 9),
-}
+FONTS = gui_fonts()
 
 
 def apply_theme(root: tk.Tk) -> None:
@@ -564,7 +558,7 @@ class SetupWizard(tk.Frame):
             dot = tk.Label(
                 self._step_indicator,
                 text="●",
-                font=("Segoe UI", 10),
+                font=FONTS["small"],
                 bg=COLORS["bg"],
                 fg=COLORS["accent"] if i <= index else COLORS["surface_bright"],
             )
@@ -800,7 +794,7 @@ class Dashboard(tk.Frame):
         self._status_dot = tk.Label(
             self._status_frame,
             text="●",
-            font=("Segoe UI", 14),
+            font=FONTS["heading"],
             bg=COLORS["bg"],
             fg=COLORS["red"],
         )

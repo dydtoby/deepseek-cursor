@@ -3,8 +3,8 @@
 
 [English](#english) · [中文](#中文)
 
-> **原项目 / Upstream:** 本项目基于 [yxlao/deepseek-cursor-proxy](https://github.com/yxlao/deepseek-cursor-proxy) 开发，在其 CLI 代理核心之上增加了 Windows GUI、便携版打包与多语言支持。  
-> **This fork** adds a Windows GUI, portable packaging, and i18n on top of the upstream CLI proxy.
+> **原项目 / Upstream:** 本项目基于 [yxlao/deepseek-cursor-proxy](https://github.com/yxlao/deepseek-cursor-proxy) 开发，在其 CLI 代理核心之上增加了跨平台 GUI、便携版打包与多语言支持。  
+> **This fork** adds a cross-platform GUI, portable packaging, and i18n on top of the upstream CLI proxy.
 
 A compatibility proxy that connects Cursor to DeepSeek thinking models (`deepseek-v4-pro` and `deepseek-v4-flash`) by properly handling the `reasoning_content` field for DeepSeek tool-call reasoning API requests.
 
@@ -18,8 +18,8 @@ This proxy can also help **other applications and coding agents** beyond Cursor 
 
 - 修复 Cursor 使用 DeepSeek 思考模式时的 `reasoning_content` 400 错误
 - 自动启动 ngrok 公网 HTTPS 隧道，供 Cursor 访问本地代理
-- 提供 **Windows GUI 桌面版**（简体中文 / English）
-- 支持 CLI 命令行模式（跨平台）
+- 提供 **GUI 桌面版**（Windows / macOS / Linux，简体中文 / English）
+- 支持 CLI 命令行模式（Windows / macOS / Linux）
 
 ### 语言 / Languages
 
@@ -35,6 +35,16 @@ GUI 支持：
 ```text
 ~/.deepseek-cursor-proxy/preferences.yaml
 ```
+
+---
+
+### 支持平台
+
+| 平台 | GUI 便携版 | CLI | 说明 |
+|------|------------|-----|------|
+| Windows | ✅ 推荐 | ✅ | 解压 ZIP 或 `install.bat` |
+| macOS (Intel/Apple Silicon) | ✅ | ✅ | 解压 ZIP 或 `pip install -e .` |
+| Linux (amd64/arm64) | ✅ | ✅ | 解压 ZIP；GUI 需 `python3-tk` |
 
 ---
 
@@ -114,7 +124,9 @@ https://example.ngrok-free.dev/v1
 
 **ngrok 隧道启动失败**
 
-- 若本机已有其他 ngrok 在运行，请先关闭：`Get-Process ngrok | Stop-Process -Force`
+- 若本机已有其他 ngrok 在运行，请先关闭：
+  - Windows：`Get-Process ngrok | Stop-Process -Force`
+  - macOS/Linux：`pkill -f ngrok`
 - 新版本会自动复用已有、指向 `127.0.0.1:9000` 的隧道
 - 查看 GUI 日志中的 ngrok 具体错误信息
 
@@ -129,17 +141,50 @@ https://example.ngrok-free.dev/v1
 
 ---
 
-### 从源码构建 Windows 安装包
+### macOS / Linux 安装指南
 
-```powershell
-# 克隆仓库
-git clone https://github.com/yxlao/deepseek-cursor-proxy.git
-cd deepseek-cursor-proxy
+#### 方式 A：GUI 便携版（与 Windows 类似）
 
-# 安装依赖
+1. 从 Release 下载对应平台的 ZIP，例如：  
+   `DeepSeekCursorProxy-v0.1.1-portable-darwin-arm64.zip`  
+   `DeepSeekCursorProxy-v0.1.1-portable-linux-amd64.zip`
+2. 解压后运行 `DeepSeekCursorProxy`（macOS 可能需在「隐私与安全性」中允许）
+3. Linux 需安装 tkinter：`sudo apt install python3-tk`（Debian/Ubuntu）或发行版等价包
+4. 按引导配置 ngrok authtoken 并启动代理
+
+可选安装脚本：
+
+```bash
+chmod +x install.sh start-proxy.sh
+./install.sh
+```
+
+#### 方式 B：从源码安装（CLI / GUI 开发模式）
+
+```bash
+git clone https://github.com/dydtoby/deepseek-cursor.git
+cd deepseek-cursor
+pip install -e .
+
+# CLI
+deepseek-cursor-proxy
+
+# GUI
+deepseek-cursor-proxy-gui
+```
+
+或使用仓库中的 `scripts/start-proxy.sh`（需已安装 ngrok）。
+
+---
+
+### 从源码构建便携包
+
+在 **目标操作系统** 上执行（PyInstaller 需在对应平台构建）：
+
+```bash
+git clone https://github.com/dydtoby/deepseek-cursor.git
+cd deepseek-cursor
 pip install -e ".[build]"
-
-# 构建（生成 dist/DeepSeekCursorProxy/ 和 portable.zip）
 python build_installer.py
 ```
 
@@ -147,10 +192,10 @@ python build_installer.py
 
 | 文件 | 说明 |
 |------|------|
-| `dist/DeepSeekCursorProxy-v0.1.1-portable.zip` | 便携版 ZIP |
-| `dist/DeepSeekCursorProxy/DeepSeekCursorProxy.exe` | 可直接运行 |
+| `dist/DeepSeekCursorProxy-v0.1.1-portable-<os>-<arch>.zip` | 当前平台的便携版 ZIP |
+| `dist/DeepSeekCursorProxy/DeepSeekCursorProxy[.exe]` | 可直接运行 |
 
-> 若已安装 [Inno Setup 6](https://jrsoftware.org/isinfo.php)，构建脚本还会生成 `.exe` 安装程序。
+> Windows 上若已安装 [Inno Setup 6](https://jrsoftware.org/isinfo.php)，还会生成 `.exe` 安装程序。
 
 ---
 
@@ -160,8 +205,16 @@ python build_installer.py
 |------|------|------|
 | 代理配置 | `~/.deepseek-cursor-proxy/config.yaml` | 端口、模型、ngrok 等 |
 | 语言偏好 | `~/.deepseek-cursor-proxy/preferences.yaml` | `language: zh-CN` 或 `en-US` |
-| ngrok token | `%LOCALAPPDATA%\ngrok\ngrok.yml` | 由 GUI 向导写入 |
+| ngrok token | 见下表 | 由 GUI 向导通过 ngrok CLI 写入 |
 | 推理缓存 | `~/.deepseek-cursor-proxy/reasoning_content.sqlite3` | 自动创建 |
+
+**ngrok 配置文件（按系统）：**
+
+| 系统 | 路径 |
+|------|------|
+| Windows | `%LOCALAPPDATA%\ngrok\ngrok.yml` |
+| macOS | `~/Library/Application Support/ngrok/ngrok.yml` |
+| Linux | `~/.config/ngrok/ngrok.yml` |
 
 ---
 
@@ -173,7 +226,7 @@ python build_installer.py
 - ✅ Displays DeepSeek's thinking tokens in Cursor by forwarding them into Cursor-visible collapsible Markdown `<details><summary>Thinking</summary>...</details>` blocks.
 - ✅ Starts an ngrok tunnel so Cursor can reach the local proxy through a public HTTPS URL.
 - ✅ Provides other compatibility fixes to make DeepSeek models run well in Cursor.
-- ✅ Windows GUI with **Simplified Chinese** and **English** UI.
+- ✅ Cross-platform GUI (Windows / macOS / Linux) with **Simplified Chinese** and **English** UI.
 
 ### Why This Exists
 
@@ -194,19 +247,29 @@ Provider returned error:
 }
 ```
 
-### Windows GUI (Portable)
+### Supported Platforms
 
-1. Download and extract `DeepSeekCursorProxy-v0.1.1-portable.zip`
-2. Run `DeepSeekCursorProxy.exe`
+| Platform | GUI portable | CLI |
+|----------|--------------|-----|
+| Windows | ✅ | ✅ |
+| macOS (Intel / Apple Silicon) | ✅ | ✅ |
+| Linux (amd64 / arm64) | ✅ | ✅ (GUI needs `python3-tk`) |
+
+### GUI (Portable)
+
+1. Download the ZIP for your OS/arch from Releases, e.g.  
+   `DeepSeekCursorProxy-v0.1.1-portable-darwin-arm64.zip`
+2. Run `DeepSeekCursorProxy` (or `DeepSeekCursorProxy.exe` on Windows)
 3. Complete the setup wizard (ngrok authtoken required)
 4. Click **Start Proxy** and copy the **Cursor Base URL**
 5. Paste it into Cursor's custom model Base URL (must end with `/v1`)
 
-Optional: run `install.bat` to copy the app to `%LOCALAPPDATA%\Programs\DeepSeekCursorProxy\` and create shortcuts.
+- Windows: optional `install.bat` → `%LOCALAPPDATA%\Programs\DeepSeekCursorProxy\`
+- macOS/Linux: optional `./install.sh`
 
 Change language in **Advanced Settings → Language** (`zh-CN` / `en-US`).
 
-Build from source:
+Build portable bundle on the target OS:
 
 ```bash
 pip install -e ".[build]"

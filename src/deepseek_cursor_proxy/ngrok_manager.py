@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
 import random
-import shutil
 import subprocess
 import sys
 import time
@@ -17,6 +15,14 @@ from urllib.request import urlopen
 
 import yaml
 
+from .platform_support import (
+    find_bundled_ngrok,
+    find_ngrok_on_path,
+    legacy_ngrok_config_paths as platform_legacy_ngrok_config_paths,
+    ngrok_binary_name,
+    ngrok_config_dir,
+    stop_ngrok_processes,
+)
 from .tunnel import (
     DEFAULT_NGROK_API_URL,
     NgrokTunnel,
@@ -34,30 +40,12 @@ NGROK_CONFIG_FILE_NAME = "ngrok.yml"
 
 
 def _find_bundled_ngrok() -> str | None:
-    """在 PyInstaller 打包环境中查找 ngrok.exe。
-
-    查找顺序：
-    1. sys._MEIPASS（PyInstaller 临时解压目录）
-    2. 可执行文件所在目录
-    3. 项目源代码目录下的 assets/
-    """
-    candidates: list[Path] = []
-
-    meipass = getattr(sys, "_MEIPASS", None)
-    if meipass:
-        candidates.append(Path(meipass) / "ngrok.exe")
-
-    if getattr(sys, "frozen", False):
-        candidates.append(Path(sys.executable).parent / "ngrok.exe")
-
-    # 开发模式：项目根目录下的 assets/
+    """在 PyInstaller 打包环境或项目 assets 中查找 ngrok 可执行文件。"""
     repo_root = Path(__file__).resolve().parents[3]
-    candidates.append(repo_root / "assets" / "ngrok.exe")
-
-    for path in candidates:
-        if path.is_file():
-            return str(path)
-    return None
+    return find_bundled_ngrok(
+        repo_root,
+        frozen=bool(getattr(sys, "frozen", False)),
+    )
 
 
 def find_ngrok_binary() -> str:
@@ -69,12 +57,13 @@ def find_ngrok_binary() -> str:
     if bundled is not None:
         return bundled
 
-    which = shutil.which("ngrok")
+    which = find_ngrok_on_path()
     if which is not None:
         return which
 
+    binary = ngrok_binary_name()
     raise FileNotFoundError(
-        "未找到 ngrok。请确保 ngrok.exe 已安装或在 PATH 中。\n"
+        f"未找到 ngrok（{binary}）。请确保 ngrok 已安装或在 PATH 中。\n"
         "下载地址: https://ngrok.com/download"
     )
 
@@ -84,17 +73,6 @@ def find_ngrok_binary() -> str:
 # ---------------------------------------------------------------------------
 
 
-def ngrok_config_dir() -> Path:
-    r"""ngrok 配置目录（Windows: %LOCALAPPDATA%\ngrok）。"""
-    if sys.platform == "win32":
-        base = Path(
-            os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")
-        )
-    else:
-        base = Path.home() / ".config"
-    return base / "ngrok"
-
-
 def ngrok_config_path() -> Path:
     """ngrok 配置文件完整路径。"""
     return ngrok_config_dir() / NGROK_CONFIG_FILE_NAME
@@ -102,27 +80,7 @@ def ngrok_config_path() -> Path:
 
 def legacy_ngrok_config_paths() -> list[Path]:
     """旧版 ngrok 可能存放 authtoken 的配置路径（不含主配置）。"""
-    primary = ngrok_config_path()
-    candidates: list[Path] = [
-        Path.home() / ".ngrok2" / NGROK_CONFIG_FILE_NAME,
-    ]
-    if sys.platform == "win32":
-        appdata = Path(
-            os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")
-        )
-        candidates.append(appdata / "ngrok" / NGROK_CONFIG_FILE_NAME)
-
-    paths: list[Path] = []
-    seen: set[str] = set()
-    for candidate in candidates:
-        if candidate == primary:
-            continue
-        key = str(candidate)
-        if key in seen:
-            continue
-        seen.add(key)
-        paths.append(candidate)
-    return paths
+    return platform_legacy_ngrok_config_paths(ngrok_config_path())
 
 
 def ngrok_config_paths() -> list[Path]:
@@ -332,23 +290,6 @@ def wait_for_authtoken_in_file(
     return read_authtoken_from_file(config_file)
 
 
-def stop_ngrok_processes() -> None:
-    """停止可能占用 4040 端口或缓存旧会话的 ngrok 进程。"""
-    if sys.platform == "win32":
-        subprocess.run(
-            ["taskkill", "/IM", "ngrok.exe", "/F"],
-            capture_output=True,
-            text=True,
-        )
-        return
-
-    subprocess.run(
-        ["pkill", "-f", "ngrok"],
-        capture_output=True,
-        text=True,
-    )
-
-
 def configure_authtoken(
     token: str,
     ngrok_binary: str | None = None,
@@ -459,6 +400,8 @@ def is_missing_authtoken_error(message: str) -> bool:
     return (
         "err_ngrok_4018" in normalized
         or "requires a verified account and authtoken" in normalized
+        or "field authtoken not found" in normalized
+        or "error reading configuration file" in normalized
     )
 
 
