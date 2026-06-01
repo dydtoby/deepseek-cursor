@@ -29,7 +29,9 @@ from .reasoning_store import ReasoningStore, conversation_scope
 from .streaming import CursorReasoningDisplayAdapter, StreamAccumulator
 from .trace import TraceRequest, TraceWriter
 from .ngrok_manager import migrate_and_cleanup_legacy_tokens, ngrok_config_path
-from .tunnel import NgrokTunnel, local_tunnel_target
+from .tunnel import NgrokTunnel, local_tunnel_target  # 保留向后兼容
+from .tunnel_manager import TunnelManager
+from .tunnel_provider import ProviderConfig, TunnelProviderType
 from .transform import (
     RECOVERY_NOTICE_CONTENT,
     prepare_upstream_request,
@@ -902,6 +904,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--tunnel-provider",
+        choices=["ngrok", "cloudflare", "frp"],
+        default=None,
+        help="Tunnel provider to use (default from config or ngrok)",
+    )
+    parser.add_argument(
         "--service-mode",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -1289,6 +1297,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.ngrok_url is not None:
         stripped = str(args.ngrok_url).strip()
         updates["ngrok_url"] = stripped if stripped else None
+    if args.tunnel_provider is not None:
+        updates["tunnel_provider"] = args.tunnel_provider
     if args.service_mode is not None:
         updates["service_mode"] = args.service_mode
     if args.auto_start is not None:
@@ -1321,6 +1331,15 @@ def main(argv: list[str] | None = None) -> int:
         config = replace(config, **updates)
     if config.service_mode and args.ngrok is None:
         config = replace(config, ngrok=False)
+
+    # Cloudflare AI Gateway 覆盖 upstream URL
+    if config.cloudflare_ai_gateway:
+        from .providers.cloudflare_provider import build_ai_gateway_url
+        parts = config.cloudflare_ai_gateway.split("/", 1)
+        if len(parts) == 2:
+            gateway_url = build_ai_gateway_url(parts[0], parts[1])
+            config = replace(config, upstream_base_url=gateway_url)
+            LOG.info("使用 Cloudflare AI Gateway: %s", gateway_url)
 
     configure_logging(verbose=config.verbose)
     legacy_cleanup = migrate_and_cleanup_legacy_tokens()
@@ -1356,16 +1375,26 @@ def main(argv: list[str] | None = None) -> int:
     server.trace_writer = trace_writer
 
     tunnel: NgrokTunnel | None = None
+    tunnel_manager: TunnelManager | None = None
     public_url: str | None = None
     if config.ngrok:
-        target_url = local_tunnel_target(config.host, config.port)
-        tunnel = NgrokTunnel(
-            target_url,
+        provider_type = TunnelProviderType(config.tunnel_provider)
+
+        tunnel_manager = TunnelManager()
+        provider_config = ProviderConfig(
+            provider=provider_type,
+            ngrok_auth_token=None,
             ngrok_url=config.ngrok_url,
-            config_path=str(ngrok_config_path()),
+            cloudflare_token=config.cloudflare_token,
+            frp_server_addr=config.frp_server_addr,
+            frp_server_port=config.frp_server_port,
+            frp_auth_token=config.frp_auth_token,
+            frp_remote_port=config.frp_remote_port,
+            frp_protocol=config.frp_protocol,
         )
+        tunnel_manager.configure(config.tunnel_provider, provider_config)
         try:
-            public_url = tunnel.start()
+            public_url = tunnel_manager.start(host=config.host, port=config.port)
         except RuntimeError as exc:
             LOG.error("%s", exc)
             server.server_close()
@@ -1413,6 +1442,8 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         if tunnel is not None:
             tunnel.stop()
+        if tunnel_manager is not None:
+            tunnel_manager.stop()
         server.server_close()
         store.close()
     return 0

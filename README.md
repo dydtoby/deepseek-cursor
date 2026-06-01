@@ -192,9 +192,11 @@ python build_installer.py
 
 | 文件 | 说明 |
 |------|------|
-| `dist/DeepSeekCursorProxy-v0.1.3-portable-<os>-<arch>.zip` | 当前平台的便携版 ZIP |
-| `dist/DeepSeekCursorProxy-v0.1.3-Setup.exe` | Windows 安装程序（需 Inno Setup 6） |
+| `dist/DeepSeekCursorProxy-v0.1.4-portable-<os>-<arch>.zip` | 当前平台的便携版 ZIP |
+| `dist/DeepSeekCursorProxy-v0.1.4-Setup.exe` | Windows 安装程序（需 Inno Setup 6） |
 | `dist/DeepSeekCursorProxy/DeepSeekCursorProxy[.exe]` | 可直接运行 |
+
+发布说明见 [`dist/RELEASE_NOTES_v0.1.4.md`](dist/RELEASE_NOTES_v0.1.4.md)。
 
 发布包图标以 [`assets/app_icon.ico`](assets/app_icon.ico) 为准；默认构建不会从 logo 覆盖该文件。需重新生成时使用 `python build_installer.py --regenerate-icon`。
 

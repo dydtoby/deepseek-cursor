@@ -24,6 +24,7 @@ DEFAULT_REASONING_EFFORT = "max"
 DEFAULT_DISPLAY_REASONING = True
 DEFAULT_COLLAPSIBLE_REASONING = True
 DEFAULT_NGROK = True
+DEFAULT_TUNNEL_PROVIDER = "cloudflare"
 DEFAULT_VERBOSE = False
 DEFAULT_SERVICE_MODE = False
 DEFAULT_AUTO_START = False
@@ -35,6 +36,13 @@ DEFAULT_CORS = False
 DEFAULT_MISSING_REASONING_STRATEGY = "recover"
 DEFAULT_REASONING_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DEFAULT_REASONING_CACHE_MAX_ROWS = 100_000
+
+# frp 默认值
+DEFAULT_FRP_SERVER_ADDR = ""
+DEFAULT_FRP_SERVER_PORT = 7000
+DEFAULT_FRP_AUTH_TOKEN = ""
+DEFAULT_FRP_REMOTE_PORT = 0
+DEFAULT_FRP_PROTOCOL = "https"
 
 DEFAULT_CONFIG_HEADER = (
     "# This file was created automatically at ~/.deepseek-cursor-proxy/config.yaml."
@@ -54,6 +62,7 @@ collasible_reasoning: {str(DEFAULT_COLLAPSIBLE_REASONING).lower()}
 host: {DEFAULT_HOST}
 port: {DEFAULT_PORT}
 ngrok: {str(DEFAULT_NGROK).lower()}
+tunnel_provider: cloudflare
 verbose: {str(DEFAULT_VERBOSE).lower()}
 service_mode: {str(DEFAULT_SERVICE_MODE).lower()}
 auto_start: {str(DEFAULT_AUTO_START).lower()}
@@ -62,6 +71,21 @@ update_channel: {DEFAULT_UPDATE_CHANNEL}
 request_timeout: {DEFAULT_REQUEST_TIMEOUT:g}
 max_request_body_bytes: {DEFAULT_MAX_REQUEST_BODY_BYTES}
 cors: {str(DEFAULT_CORS).lower()}
+
+# Cloudflare 隧道配置
+cloudflare_token:
+
+# Cloudflare AI Gateway（可选，替代直接调用 DeepSeek API）
+# 格式: account_id/gateway_id
+# 示例: cloudflare_ai_gateway: "abc123/my-gateway"
+cloudflare_ai_gateway:
+
+# frp 隧道配置
+frp_server_addr: {DEFAULT_FRP_SERVER_ADDR}
+frp_server_port: {DEFAULT_FRP_SERVER_PORT}
+frp_auth_token: {DEFAULT_FRP_AUTH_TOKEN}
+frp_remote_port: {DEFAULT_FRP_REMOTE_PORT}
+frp_protocol: {DEFAULT_FRP_PROTOCOL}
 
 reasoning_content_path: {REASONING_CONTENT_FILE_NAME}
 missing_reasoning_strategy: {DEFAULT_MISSING_REASONING_STRATEGY}
@@ -245,6 +269,17 @@ class ProxyConfig:
     verbose: bool = DEFAULT_VERBOSE
     ngrok: bool = DEFAULT_NGROK
     ngrok_url: str | None = None
+    tunnel_provider: str = DEFAULT_TUNNEL_PROVIDER
+    # Cloudflare 隧道
+    cloudflare_token: str | None = None
+    # Cloudflare AI Gateway（替代直接调用 DeepSeek API）
+    cloudflare_ai_gateway: str | None = None
+    # frp 隧道
+    frp_server_addr: str = DEFAULT_FRP_SERVER_ADDR
+    frp_server_port: int = DEFAULT_FRP_SERVER_PORT
+    frp_auth_token: str = DEFAULT_FRP_AUTH_TOKEN
+    frp_remote_port: int = DEFAULT_FRP_REMOTE_PORT
+    frp_protocol: str = DEFAULT_FRP_PROTOCOL
     service_mode: bool = DEFAULT_SERVICE_MODE
     auto_start: bool = DEFAULT_AUTO_START
     service_name: str = DEFAULT_SERVICE_NAME
@@ -332,6 +367,36 @@ class ProxyConfig:
                 DEFAULT_NGROK,
             ),
             ngrok_url=as_optional_str(setting_value(settings, "ngrok_url")),
+            tunnel_provider=as_str(
+                setting_value(settings, "tunnel_provider"),
+                DEFAULT_TUNNEL_PROVIDER,
+            ),
+            cloudflare_token=as_optional_str(
+                setting_value(settings, "cloudflare_token"),
+            ),
+            cloudflare_ai_gateway=as_optional_str(
+                setting_value(settings, "cloudflare_ai_gateway"),
+            ),
+            frp_server_addr=as_str(
+                setting_value(settings, "frp_server_addr"),
+                DEFAULT_FRP_SERVER_ADDR,
+            ),
+            frp_server_port=as_int(
+                setting_value(settings, "frp_server_port"),
+                DEFAULT_FRP_SERVER_PORT,
+            ),
+            frp_auth_token=as_str(
+                setting_value(settings, "frp_auth_token"),
+                DEFAULT_FRP_AUTH_TOKEN,
+            ),
+            frp_remote_port=as_int(
+                setting_value(settings, "frp_remote_port"),
+                DEFAULT_FRP_REMOTE_PORT,
+            ),
+            frp_protocol=as_str(
+                setting_value(settings, "frp_protocol"),
+                DEFAULT_FRP_PROTOCOL,
+            ),
             service_mode=as_bool(
                 setting_value(settings, "service_mode"),
                 DEFAULT_SERVICE_MODE,

@@ -26,30 +26,66 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "language.restart_hint": "语言已保存，界面已更新。",
         "wizard.subtitle": "首次运行 · 配置引导",
         "wizard.step.welcome": "欢迎",
+        "wizard.step.provider": "隧道",
+        "wizard.step.config": "配置",
         "wizard.step.ngrok": "ngrok",
         "wizard.step.confirm": "确认",
         "wizard.welcome.title": "欢迎使用 DeepSeek Cursor Proxy",
         "wizard.welcome.body": (
             "本工具将帮助你在 Cursor 中使用 DeepSeek 思考模型。\n\n"
-            "首次配置只需输入 ngrok authtoken（免费注册获取）。\n"
+            "首次配置需要选择隧道方案（用于创建公网访问地址）：\n"
+            "  · ngrok — 国际通用（中国境内可能受限）\n"
+            "  · Cloudflare Tunnel — 全球可用，中国境内推荐\n"
+            "  · frp — 国内最流行，需要自备服务器\n\n"
             "DeepSeek API Key 请在 Cursor 自定义模型中填写；\n"
             "代理会转发 Cursor 请求中的密钥，不会使用本应用内保存的密钥。\n\n"
             "完成后，代理将提供 HTTPS URL，将其填入 Cursor 的 Base URL 即可。"
         ),
+        "wizard.provider.title": "选择隧道方案",
+        "wizard.provider.desc": (
+            "隧道服务用于为本机创建公网 HTTPS 地址，让 Cursor 可以访问本地代理。\n"
+            "请选择适合你网络环境的方案："
+        ),
+        "wizard.provider.not_installed": "（未安装 — 需要先下载安装）",
+        "wizard.provider.config_title": "配置隧道",
+        "wizard.provider.cf_title": "Cloudflare Tunnel（无需额外配置）",
+        "wizard.provider.cf_desc": "Cloudflare Tunnel 使用 TryCloudflare 免费快速隧道，无需注册账号。只需安装 cloudflared 即可使用。",
+        "wizard.provider.cf_info": "✓ Cloudflare Tunnel 已就绪。\n无需 token 或额外配置，安装 cloudflared 后即可使用。",
+        "wizard.provider.cf_modes": (
+            "隧道模式说明：\n"
+            "  · 留空 → TryCloudflare 免费快速隧道（不支持流式/SSE）\n"
+            "  · 输入账号ID/网关ID → Cloudflare AI Gateway（支持流式）\n"
+            "  · 输入隧道名称 → 命名隧道（需 Cloudflare 账号，支持流式）"
+        ),
+        "wizard.provider.cf_token_label": "Cloudflare Token（可选）",
+        "wizard.provider.frp_title": "配置 frp 隧道",
+        "wizard.provider.frp_desc": (
+            "frp 需要一台有公网 IP 的服务器运行 frps。\n"
+            "请填写以下信息（可从 frp 服务器管理员处获取）："
+        ),
+        "wizard.provider.frp_server": "服务器地址",
+        "wizard.provider.frp_port": "服务器端口",
+        "wizard.provider.frp_token": "认证 Token",
         "wizard.ngrok.title": "配置 ngrok Authtoken",
         "wizard.ngrok.desc": "ngrok 用于创建公网 HTTPS 隧道，让 Cursor 可以访问本地代理。",
         "wizard.ngrok.get_token": "获取 token: ",
         "wizard.ngrok.token_label": "ngrok Authtoken",
         "wizard.confirm.title": "确认配置",
+        "wizard.confirm.provider": "  隧道方案: {value}",
         "wizard.confirm.ngrok": "  ngrok authtoken : {value}",
+        "wizard.confirm.cloudflare": "  Cloudflare Tunnel : 使用 TryCloudflare 免费隧道",
+        "wizard.confirm.cloudflare_token": "  Cloudflare Token : {value}",
+        "wizard.confirm.frp_server": "  frp 服务器     : {value}",
+        "wizard.confirm.frp_port": "  frp 端口       : {value}",
         "wizard.confirm.use_ngrok": "  使用 ngrok 隧道  : 是",
         "wizard.confirm.not_set": "(未填写)",
         "wizard.confirm.cursor_api_key": "  DeepSeek API Key: 请在 Cursor 模型设置中填写",
         "wizard.btn.prev": "上一步",
         "wizard.btn.next": "下一步",
         "wizard.btn.finish": "完成配置",
-        "wizard.warn.missing_token.title": "缺少 authtoken",
+        "wizard.warn.missing_token.title": "缺少配置",
         "wizard.warn.missing_token.body": "请输入 ngrok authtoken 以继续。",
+        "wizard.warn.missing_frp_server": "请填写 frp 服务器地址以继续。",
         "log.title": "  运行日志",
         "log.auto_scroll": "自动滚动",
         "log.clear": "清空",
@@ -78,9 +114,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dashboard.settings.hide": "▾ 高级设置",
         "dashboard.credentials.title": "密钥",
         "dashboard.credentials.ngrok": "ngrok authtoken",
+        "dashboard.credentials.cf_token": "Cloudflare Token（可选）",
+        "dashboard.credentials.frp_token": "frp 认证 Token",
         "dashboard.credentials.deepseek": "DeepSeek API Key（备忘）",
         "dashboard.credentials.deepseek_hint": (
             "仅本地备忘保存，明文显示；代理请求使用 Cursor 中配置的 API Key。"
+        ),
+        "dashboard.credentials.cf_ai_gateway": "Cloudflare AI Gateway",
+        "dashboard.credentials.cf_ai_gateway_hint": (
+            "可选。格式：账号ID/网关ID，用于通过 Cloudflare 代理 DeepSeek API（缓存、限流、分析）。"
+        ),
+        "dashboard.credentials.cf_ai_gateway_invalid": (
+            "AI Gateway 格式无效，请使用 account_id/gateway_id 格式。"
         ),
         "dashboard.credentials.save": "保存密钥",
         "dashboard.credentials.saved": "密钥已保存。",
@@ -156,16 +201,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dashboard.clear_data.error.body": "清除过程中出错：\n{error}",
         "proxy.init_cache": "正在初始化推理缓存...",
         "proxy.start_local": "正在启动本地代理服务器...",
-        "proxy.start_ngrok": "正在启动 ngrok 隧道...",
+        "proxy.start_ngrok": "正在启动隧道...",
         "proxy.running": "代理运行中",
         "proxy.running_local": "代理运行中（仅本地）",
         "proxy.stopped": "代理已停止",
         "proxy.start_failed": "启动失败: {error}",
-        "proxy.ngrok_failed": "ngrok 隧道启动失败: {error}",
+        "proxy.tunnel_failed": "隧道启动失败: {error}",
+        "proxy.ngrok_failed": "隧道启动失败: {error}",
         "proxy.ngrok_auth_missing": (
             "ngrok 未检测到有效 authtoken。请在引导页重新粘贴 "
             "https://dashboard.ngrok.com/get-started/your-authtoken 中的 token。"
         ),
+        "proxy.log.tunnel_url": "公网 URL: {url}",
         "proxy.log.ngrok_url": "ngrok 公网 URL: {url}",
         "proxy.log.cursor_base": "Cursor Base URL: {url}",
         "proxy.log.local_running": "本地代理仍在运行: {url}",
@@ -176,6 +223,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "API Key 在 Cursor 模型设置中填写"
         ),
         "proxy.log.authtoken_ok": "ngrok authtoken 配置成功",
+        "proxy.log.cf_configured": "Cloudflare Tunnel 已配置",
         "proxy.log.legacy_token_migrated": "已从旧版配置迁移 ngrok token: {path}",
         "proxy.log.legacy_token_cleared": "已自动清除旧版 ngrok token: {path}",
         "proxy.log.setup_failed": "配置失败: {error}",
@@ -200,31 +248,67 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "language.restart_hint": "Language saved. The interface has been updated.",
         "wizard.subtitle": "First Run · Setup Wizard",
         "wizard.step.welcome": "Welcome",
+        "wizard.step.provider": "Tunnel",
+        "wizard.step.config": "Config",
         "wizard.step.ngrok": "ngrok",
         "wizard.step.confirm": "Confirm",
         "wizard.welcome.title": "Welcome to DeepSeek Cursor Proxy",
         "wizard.welcome.body": (
             "This app helps you use DeepSeek thinking models in Cursor.\n\n"
-            "First-time setup only needs your ngrok authtoken (free account).\n"
+            "First-time setup requires choosing a tunnel solution:\n"
+            "  · ngrok — global (may be restricted in China)\n"
+            "  · Cloudflare Tunnel — free, works worldwide (recommended for China)\n"
+            "  · frp — most popular in China, requires a VPS\n\n"
             "Set your DeepSeek API key in Cursor's custom model settings;\n"
             "the proxy forwards the key from Cursor requests and does not use\n"
             "any key saved in this app.\n\n"
             "After setup, paste the HTTPS URL into Cursor's Base URL."
         ),
+        "wizard.provider.title": "Choose Tunnel Provider",
+        "wizard.provider.desc": (
+            "A tunnel creates a public HTTPS URL to your local proxy.\n"
+            "Choose the solution that works best for your network:"
+        ),
+        "wizard.provider.not_installed": "(not installed — need to download first)",
+        "wizard.provider.config_title": "Configure Tunnel",
+        "wizard.provider.cf_title": "Cloudflare Tunnel (no additional config needed)",
+        "wizard.provider.cf_desc": "Cloudflare Tunnel uses the free TryCloudflare quick tunnel. No account required. Just install cloudflared.",
+        "wizard.provider.cf_info": "✓ Cloudflare Tunnel is ready.\nNo token or extra config needed. Install cloudflared and you're good to go.",
+        "wizard.provider.cf_modes": (
+            "Tunnel modes:\n"
+            "  · Leave blank → TryCloudflare free quick tunnel (no SSE/streaming)\n"
+            "  · Enter account_id/gateway_id → Cloudflare AI Gateway (supports streaming)\n"
+            "  · Enter tunnel name → Named Tunnel (requires Cloudflare account, supports streaming)"
+        ),
+        "wizard.provider.cf_token_label": "Cloudflare Token (optional)",
+        "wizard.provider.frp_title": "Configure frp Tunnel",
+        "wizard.provider.frp_desc": (
+            "frp requires a server with a public IP running frps.\n"
+            "Enter the connection details (ask your frp server admin):"
+        ),
+        "wizard.provider.frp_server": "Server Address",
+        "wizard.provider.frp_port": "Server Port",
+        "wizard.provider.frp_token": "Auth Token",
         "wizard.ngrok.title": "Configure ngrok Authtoken",
         "wizard.ngrok.desc": "ngrok creates a public HTTPS tunnel so Cursor can reach the local proxy.",
         "wizard.ngrok.get_token": "Get token: ",
         "wizard.ngrok.token_label": "ngrok Authtoken",
         "wizard.confirm.title": "Review Settings",
+        "wizard.confirm.provider": "  Tunnel type: {value}",
         "wizard.confirm.ngrok": "  ngrok authtoken : {value}",
+        "wizard.confirm.cloudflare": "  Cloudflare Tunnel : using TryCloudflare free tunnel",
+        "wizard.confirm.cloudflare_token": "  Cloudflare Token : {value}",
+        "wizard.confirm.frp_server": "  frp server   : {value}",
+        "wizard.confirm.frp_port": "  frp port     : {value}",
         "wizard.confirm.use_ngrok": "  Use ngrok tunnel : yes",
         "wizard.confirm.not_set": "(not set)",
         "wizard.confirm.cursor_api_key": "  DeepSeek API Key: set in Cursor model settings",
         "wizard.btn.prev": "Back",
         "wizard.btn.next": "Next",
         "wizard.btn.finish": "Finish Setup",
-        "wizard.warn.missing_token.title": "Missing authtoken",
+        "wizard.warn.missing_token.title": "Missing Configuration",
         "wizard.warn.missing_token.body": "Enter your ngrok authtoken to continue.",
+        "wizard.warn.missing_frp_server": "Enter the frp server address to continue.",
         "log.title": "  Logs",
         "log.auto_scroll": "Auto scroll",
         "log.clear": "Clear",
@@ -253,10 +337,20 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dashboard.settings.hide": "▾ Advanced Settings",
         "dashboard.credentials.title": "Credentials",
         "dashboard.credentials.ngrok": "ngrok authtoken",
+        "dashboard.credentials.cf_token": "Cloudflare Token (optional)",
+        "dashboard.credentials.frp_token": "frp Auth Token",
         "dashboard.credentials.deepseek": "DeepSeek API Key (memo)",
         "dashboard.credentials.deepseek_hint": (
             "Saved locally for your reference (shown in plain text). "
             "The proxy uses the API key configured in Cursor."
+        ),
+        "dashboard.credentials.cf_ai_gateway": "Cloudflare AI Gateway",
+        "dashboard.credentials.cf_ai_gateway_hint": (
+            "Optional. Format: account_id/gateway_id to route DeepSeek API via Cloudflare "
+            "(caching, rate limiting, analytics)."
+        ),
+        "dashboard.credentials.cf_ai_gateway_invalid": (
+            "Invalid AI Gateway format. Use account_id/gateway_id."
         ),
         "dashboard.credentials.save": "Save credentials",
         "dashboard.credentials.saved": "Credentials saved.",
@@ -332,16 +426,18 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dashboard.clear_data.error.body": "An error occurred while clearing data:\n{error}",
         "proxy.init_cache": "Initializing reasoning cache...",
         "proxy.start_local": "Starting local proxy server...",
-        "proxy.start_ngrok": "Starting ngrok tunnel...",
+        "proxy.start_ngrok": "Starting tunnel...",
         "proxy.running": "Proxy running",
         "proxy.running_local": "Proxy running (local only)",
         "proxy.stopped": "Proxy stopped",
         "proxy.start_failed": "Failed to start: {error}",
-        "proxy.ngrok_failed": "Failed to start ngrok tunnel: {error}",
+        "proxy.tunnel_failed": "Failed to start tunnel: {error}",
+        "proxy.ngrok_failed": "Failed to start tunnel: {error}",
         "proxy.ngrok_auth_missing": (
             "ngrok does not have a valid authtoken. Paste the token from "
             "https://dashboard.ngrok.com/get-started/your-authtoken in the setup wizard."
         ),
+        "proxy.log.tunnel_url": "Public URL: {url}",
         "proxy.log.ngrok_url": "ngrok public URL: {url}",
         "proxy.log.cursor_base": "Cursor Base URL: {url}",
         "proxy.log.local_running": "Local proxy still running: {url}",
@@ -352,6 +448,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "and set your API key in Cursor's model settings"
         ),
         "proxy.log.authtoken_ok": "ngrok authtoken configured",
+        "proxy.log.cf_configured": "Cloudflare Tunnel configured",
         "proxy.log.legacy_token_migrated": "Migrated ngrok token from legacy config: {path}",
         "proxy.log.legacy_token_cleared": "Automatically cleared legacy ngrok token: {path}",
         "proxy.log.setup_failed": "Setup failed: {error}",

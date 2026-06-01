@@ -21,7 +21,7 @@ DIST_DIR = PROJECT_ROOT / "dist"
 BUILD_DIR = PROJECT_ROOT / "build"
 FREEZE_OUTPUT = DIST_DIR / "DeepSeekCursorProxy"
 APP_NAME = "DeepSeek Cursor Proxy"
-APP_VERSION = "0.1.3"
+APP_VERSION = "0.1.4"
 APP_PUBLISHER = "DeepSeek Cursor Proxy"
 APP_INSTALL_FOLDER = "DeepSeekCursorProxy"
 INSTALLER_OUTPUT = DIST_DIR / f"DeepSeekCursorProxy-v{APP_VERSION}-Setup.exe"
@@ -149,6 +149,16 @@ def step_freeze() -> Path:
         "--hidden-import",
         "deepseek_cursor_proxy.i18n",
         "--hidden-import",
+        "deepseek_cursor_proxy.tunnel_manager",
+        "--hidden-import",
+        "deepseek_cursor_proxy.tunnel_provider",
+        "--hidden-import",
+        "deepseek_cursor_proxy.providers.ngrok_provider",
+        "--hidden-import",
+        "deepseek_cursor_proxy.providers.cloudflare_provider",
+        "--hidden-import",
+        "deepseek_cursor_proxy.providers.frp_provider",
+        "--hidden-import",
         "yaml",
         str(PROJECT_ROOT / "launcher.py"),
     ]
@@ -197,8 +207,33 @@ def step_freeze() -> Path:
     return output_dir
 
 
+def step_download_cloudflared(freeze_dir: Path) -> Path | None:
+    print("\n[步骤 2b/4] 下载 cloudflared（Cloudflare Tunnel）...")
+
+    from deepseek_cursor_proxy.providers.cloudflare_provider import (
+        CLOUDFLARED_BINARY_NAME,
+        download_cloudflared,
+    )
+
+    target = freeze_dir / CLOUDFLARED_BINARY_NAME
+    if target.is_file():
+        print(f"  {CLOUDFLARED_BINARY_NAME} 已存在: {target}")
+        return target
+
+    try:
+        downloaded = download_cloudflared()
+        src = Path(downloaded)
+        if src.is_file() and src.resolve() != target.resolve():
+            shutil.copy2(src, target)
+        print(f"  {CLOUDFLARED_BINARY_NAME} 已放入: {target}")
+        return target
+    except Exception as exc:
+        print(f"\n[WARNING] cloudflared 下载失败（运行时可自动下载）: {exc}")
+        return None
+
+
 def step_download_ngrok(freeze_dir: Path) -> Path:
-    print("\n[步骤 2/3] 下载 ngrok...")
+    print("\n[步骤 2/4] 下载 ngrok...")
 
     binary_name = ngrok_binary_name()
     ngrok_path = freeze_dir / binary_name
@@ -347,6 +382,7 @@ def build_full() -> None:
 
     freeze_dir = step_freeze()
     step_download_ngrok(freeze_dir)
+    step_download_cloudflared(freeze_dir)
     installer_path = step_create_installer(freeze_dir)
     zip_path = step_create_zip(freeze_dir)
 

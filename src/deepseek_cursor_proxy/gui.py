@@ -35,7 +35,6 @@ from .i18n import SUPPORTED_LOCALES, get_locale, init_locale, set_locale, t
 from .ngrok_manager import (
     NgrokTunnelManager,
     configure_authtoken,
-    is_endpoint_already_online_error,
     find_ngrok_binary,
     has_authtoken_configured,
     is_missing_authtoken_error,
@@ -47,6 +46,8 @@ from .server import DeepSeekProxyHandler, DeepSeekProxyServer
 from .reasoning_store import ReasoningStore
 from .platform_support import gui_fonts
 from .tunnel import local_tunnel_target
+from .tunnel_manager import TunnelManager
+from .tunnel_provider import ProviderConfig, TunnelProviderType
 from .updater import fetch_latest_release, has_update
 
 LOG = logging.getLogger("deepseek_cursor_proxy.gui")
@@ -86,7 +87,7 @@ class ProxyController:
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._server: DeepSeekProxyServer | None = None
-        self._tunnel_manager: NgrokTunnelManager | None = None
+        self._tunnel_manager: TunnelManager | None = None
         self._store: ReasoningStore | None = None
 
     def start(self, config: ProxyConfig) -> None:
@@ -158,20 +159,31 @@ class ProxyController:
                 self._emit_status(
                     state="starting", message=t("proxy.start_ngrok")
                 )
-                self._tunnel_manager = NgrokTunnelManager(
-                    host=config.host,
-                    port=config.port,
+                # 根据配置创建 TunnelManager
+                self._tunnel_manager = TunnelManager()
+                provider_config = ProviderConfig(
+                    provider=TunnelProviderType(config.tunnel_provider),
+                    ngrok_auth_token=None,  # 从 ngrok 配置文件读取
                     ngrok_url=config.ngrok_url,
+                    cloudflare_token=config.cloudflare_token,
+                    frp_server_addr=config.frp_server_addr,
+                    frp_server_port=config.frp_server_port,
+                    frp_auth_token=config.frp_auth_token,
+                    frp_remote_port=config.frp_remote_port,
+                    frp_protocol=config.frp_protocol,
                 )
+                self._tunnel_manager.configure(config.tunnel_provider, provider_config)
                 try:
-                    public_url = self._tunnel_manager.start()
+                    public_url = self._tunnel_manager.start(
+                        host=config.host, port=config.port
+                    )
                     self._emit_status(
                         state="running",
                         message=t("proxy.running"),
                         public_url=public_url,
                         local_url=local_url,
                     )
-                    LOG.info(t("proxy.log.ngrok_url", url=public_url))
+                    LOG.info(t("proxy.log.tunnel_url", url=public_url))
                     LOG.info(
                         t("proxy.log.cursor_base", url=f"{public_url.rstrip('/')}/v1")
                     )
@@ -181,10 +193,10 @@ class ProxyController:
                         error_text = t("proxy.ngrok_auth_missing")
                     self._emit_status(
                         state="error",
-                        message=t("proxy.ngrok_failed", error=error_text),
+                        message=t("proxy.tunnel_failed", error=error_text),
                         local_url=local_url,
                     )
-                    LOG.error(t("proxy.ngrok_failed", error=error_text))
+                    LOG.error(t("proxy.tunnel_failed", error=error_text))
                     LOG.info(t("proxy.log.local_running", url=local_url))
             else:
                 self._emit_status(
@@ -514,7 +526,7 @@ class ScrollableHost(tk.Frame):
 
 
 class SetupWizard(tk.Frame):
-    """首次运行引导向导：配置 ngrok authtoken。"""
+    """首次运行引导向导：选择隧道提供商并配置。"""
 
     def __init__(
         self,
@@ -531,6 +543,14 @@ class SetupWizard(tk.Frame):
         self._current_step = 0
         self._steps: list[tk.Frame] = []
         self._token_var = tk.StringVar()
+        # 隧道提供商选择
+        self._provider_var = tk.StringVar(value="cloudflare")
+        # Cloudflare 配置变量
+        self._cf_token_var = tk.StringVar()
+        # frp 配置变量
+        self._frp_server_var = tk.StringVar()
+        self._frp_port_var = tk.StringVar(value="7000")
+        self._frp_token_var = tk.StringVar()
 
         self._build()
 
@@ -611,7 +631,8 @@ class SetupWizard(tk.Frame):
         )
 
         self._build_step_welcome()
-        self._build_step_ngrok()
+        self._build_step_provider()
+        self._build_step_config()
         self._build_step_confirm()
         self._show_step(0)
 
@@ -633,51 +654,126 @@ class SetupWizard(tk.Frame):
         ).pack(anchor="w")
         self._steps.append(frame)
 
-    # ---- ngrok authtoken 页 ----
-    def _build_step_ngrok(self) -> None:
+    # ---- 隧道提供商选择页 ----
+    def _build_step_provider(self) -> None:
         frame = tk.Frame(self._content, bg=COLORS["bg"])
         card = Card(frame, margin_x=0, margin_y=0, fill="both")
         card.pack(fill="both", expand=True)
         c = card.content
-        section_title(c, t("wizard.ngrok.title")).pack(anchor="w", pady=(0, 8))
+        section_title(c, t("wizard.provider.title")).pack(anchor="w", pady=(0, 8))
         tk.Label(
             c,
-            text=t("wizard.ngrok.desc"),
+            text=t("wizard.provider.desc"),
             font=FONTS["body"],
             bg=COLORS["card"],
             fg=COLORS["text_dim"],
             wraplength=480,
             justify="left",
-        ).pack(anchor="w", pady=(0, 8))
-        link_frame = tk.Frame(c, bg=COLORS["card"])
-        link_frame.pack(anchor="w", pady=(0, 12))
+        ).pack(anchor="w", pady=(0, 12))
+
+        # 获取提供商列表
+        try:
+            from .tunnel_manager import TunnelManager
+            providers = TunnelManager.list_providers()
+        except Exception:
+            providers = [
+                {"type": "ngrok", "name": "ngrok", "description": "", "available": True},
+                {"type": "cloudflare", "name": "Cloudflare Tunnel", "description": "", "available": False},
+                {"type": "frp", "name": "frp", "description": "", "available": False},
+            ]
+
+        self._provider_radios: dict[str, tk.Radiobutton] = {}
+        self._provider_desc_labels: dict[str, tk.Label] = {}
+
+        for i, p in enumerate(providers):
+            ptype = p["type"]
+            pname = p["name"]
+            pdesc = p["description"]
+            avail = p["available"]
+
+            row = tk.Frame(c, bg=COLORS["card"])
+            row.pack(fill="x", pady=4)
+
+            rb = tk.Radiobutton(
+                row,
+                text=pname,
+                variable=self._provider_var,
+                value=ptype,
+                font=FONTS["body"],
+                bg=COLORS["card"],
+                fg=COLORS["fg"] if avail else COLORS["text_muted"],
+                activebackground=COLORS["card"],
+                activeforeground=COLORS["fg"],
+                selectcolor=COLORS["input"],
+            )
+            rb.pack(anchor="w")
+            if not avail:
+                rb.configure(state="disabled")
+
+            desc_label = tk.Label(
+                row,
+                text=pdesc if pdesc else (t("wizard.provider.not_installed") if not avail else ""),
+                font=FONTS["small"],
+                bg=COLORS["card"],
+                fg=COLORS["text_muted"],
+                wraplength=440,
+                justify="left",
+            )
+            desc_label.pack(anchor="w", padx=(24, 0), pady=(2, 4))
+
+        self._steps.append(frame)
+
+    # ---- 提供商配置页（根据选择显示不同内容） ----
+    def _build_step_config(self) -> None:
+        frame = tk.Frame(self._content, bg=COLORS["bg"])
+        card = Card(frame, margin_x=0, margin_y=0, fill="both")
+        card.pack(fill="both", expand=True)
+        c = card.content
+
+        # 动态标题和描述
+        self._provider_config_title = section_title(c, t("wizard.provider.cf_title"))
+        self._provider_config_title.pack(anchor="w", pady=(0, 8))
+        self._provider_config_desc = tk.Label(
+            c,
+            text=t("wizard.provider.cf_desc"),
+            font=FONTS["body"],
+            bg=COLORS["card"],
+            fg=COLORS["text_dim"],
+            wraplength=480,
+            justify="left",
+        )
+        self._provider_config_desc.pack(anchor="w", pady=(0, 12))
+
+        # ---- ngrok 配置子区域 ----
+        self._ngrok_config_frame = tk.Frame(c, bg=COLORS["card"])
+        ngrok_link_frame = tk.Frame(self._ngrok_config_frame, bg=COLORS["card"])
+        ngrok_link_frame.pack(anchor="w", pady=(0, 12))
         tk.Label(
-            link_frame,
+            ngrok_link_frame,
             text=t("wizard.ngrok.get_token"),
             font=FONTS["small"],
             bg=COLORS["card"],
             fg=COLORS["text_muted"],
         ).pack(side="left")
         tk.Label(
-            link_frame,
+            ngrok_link_frame,
             text="https://dashboard.ngrok.com/get-started/your-authtoken",
             font=FONTS["small"],
             bg=COLORS["card"],
             fg=COLORS["accent_dim"],
             cursor="hand2",
         ).pack(side="left", padx=(4, 0))
-
         tk.Label(
-            c,
+            self._ngrok_config_frame,
             text=t("wizard.ngrok.token_label"),
             font=FONTS["small"],
             bg=COLORS["card"],
             fg=COLORS["text_dim"],
         ).pack(anchor="w", pady=(0, 4))
-        entry_box = inset_frame(c)
-        entry_box.pack(fill="x")
-        entry = tk.Entry(
-            entry_box,
+        ngrok_entry_box = inset_frame(self._ngrok_config_frame)
+        ngrok_entry_box.pack(fill="x")
+        ngrok_entry = tk.Entry(
+            ngrok_entry_box,
             textvariable=self._token_var,
             font=FONTS["mono"],
             bg=COLORS["input"],
@@ -686,8 +782,94 @@ class SetupWizard(tk.Frame):
             relief="flat",
             borderwidth=0,
         )
-        entry.pack(fill="x", ipady=8, padx=10, pady=6)
-        entry.bind("<Control-a>", lambda e: entry.select_range(0, "end"))
+        ngrok_entry.pack(fill="x", ipady=8, padx=10, pady=6)
+        ngrok_entry.bind("<Control-a>", lambda e: ngrok_entry.select_range(0, "end"))
+
+        # ---- Cloudflare 配置子区域 ----
+        self._cf_config_frame = tk.Frame(c, bg=COLORS["card"])
+        cf_info = inset_frame(self._cf_config_frame)
+        cf_info.pack(fill="x", pady=(0, 12))
+        tk.Label(
+            cf_info,
+            text=t("wizard.provider.cf_info"),
+            font=FONTS["body"],
+            bg=COLORS["surface"],
+            fg=COLORS["green"],
+            wraplength=440,
+            justify="left",
+        ).pack(padx=12, pady=10)
+
+        # Cloudflare 模式说明
+        cf_mode_frame = tk.Frame(self._cf_config_frame, bg=COLORS["card"])
+        cf_mode_frame.pack(fill="x", pady=(0, 8))
+        tk.Label(
+            cf_mode_frame,
+            text=t("wizard.provider.cf_modes"),
+            font=FONTS["small"],
+            bg=COLORS["card"],
+            fg=COLORS["text_dim"],
+            wraplength=480,
+            justify="left",
+        ).pack(anchor="w")
+
+        tk.Label(
+            self._cf_config_frame,
+            text=t("wizard.provider.cf_token_label"),
+            font=FONTS["small"],
+            bg=COLORS["card"],
+            fg=COLORS["text_dim"],
+        ).pack(anchor="w", pady=(8, 4))
+        cf_entry_box = inset_frame(self._cf_config_frame)
+        cf_entry_box.pack(fill="x")
+        cf_entry = tk.Entry(
+            cf_entry_box,
+            textvariable=self._cf_token_var,
+            font=FONTS["mono"],
+            bg=COLORS["input"],
+            fg=COLORS["fg"],
+            insertbackground=COLORS["fg"],
+            relief="flat",
+            borderwidth=0,
+        )
+        cf_entry.pack(fill="x", ipady=8, padx=10, pady=6)
+        cf_entry.bind("<Control-a>", lambda e: cf_entry.select_range(0, "end"))
+
+        # ---- frp 配置子区域 ----
+        self._frp_config_frame = tk.Frame(c, bg=COLORS["card"])
+        for label_key, var, default_val in (
+            ("wizard.provider.frp_server", self._frp_server_var, ""),
+            ("wizard.provider.frp_port", self._frp_port_var, "7000"),
+            ("wizard.provider.frp_token", self._frp_token_var, ""),
+        ):
+            row = tk.Frame(self._frp_config_frame, bg=COLORS["card"])
+            row.pack(fill="x", pady=4)
+            tk.Label(
+                row,
+                text=f"{t(label_key)}:",
+                font=FONTS["small"],
+                bg=COLORS["card"],
+                fg=COLORS["text_dim"],
+                width=12,
+                anchor="e",
+            ).pack(side="left", padx=(0, 10))
+            entry_box = inset_frame(row)
+            entry_box.pack(side="left", fill="x", expand=True)
+            entry = tk.Entry(
+                entry_box,
+                textvariable=var,
+                font=FONTS["body"],
+                bg=COLORS["input"],
+                fg=COLORS["fg"],
+                insertbackground=COLORS["fg"],
+                relief="flat",
+                borderwidth=0,
+            )
+            entry.pack(fill="x", ipady=5, padx=8, pady=3)
+
+        # 默认隐藏所有子区域，由 _update_provider_config_page 控制显示
+        self._ngrok_config_frame.pack_forget()
+        self._cf_config_frame.pack_forget()
+        self._frp_config_frame.pack_forget()
 
         self._steps.append(frame)
 
@@ -732,7 +914,8 @@ class SetupWizard(tk.Frame):
 
         step_labels = [
             t("wizard.step.welcome"),
-            t("wizard.step.ngrok"),
+            t("wizard.step.provider"),
+            t("wizard.step.config"),
             t("wizard.step.confirm"),
         ]
         for widget in self._step_indicator.winfo_children():
@@ -784,10 +967,16 @@ class SetupWizard(tk.Frame):
 
         self._current_step = index
 
+        if index == 2:
+            self._update_provider_config_page()
+
     def _next_step(self) -> None:
         if self._current_step < len(self._steps) - 1:
+            # 进入提供商配置页时更新界面
+            if self._current_step == 1:  # 从提供商选择页进入配置页
+                self._update_provider_config_page()
             # 在确认页更新摘要
-            if self._current_step == 1:
+            if self._current_step == 2:
                 self._update_confirm_text()
             self._show_step(self._current_step + 1)
 
@@ -795,16 +984,53 @@ class SetupWizard(tk.Frame):
         if self._current_step > 0:
             self._show_step(self._current_step - 1)
 
+    def _update_provider_config_page(self) -> None:
+        """根据选择的提供商更新配置页面。"""
+        provider = self._provider_var.get()
+
+        # 隐藏所有配置子区域
+        for frame in (self._ngrok_config_frame, self._cf_config_frame, self._frp_config_frame):
+            frame.pack_forget()
+
+        if provider == "ngrok":
+            self._provider_config_title.configure(text=t("wizard.ngrok.title"))
+            self._provider_config_desc.configure(text=t("wizard.ngrok.desc"))
+            self._ngrok_config_frame.pack(fill="x")
+        elif provider == "cloudflare":
+            self._provider_config_title.configure(text=t("wizard.provider.cf_title"))
+            self._provider_config_desc.configure(text=t("wizard.provider.cf_desc"))
+            self._cf_config_frame.pack(fill="x")
+        elif provider == "frp":
+            self._provider_config_title.configure(text=t("wizard.provider.frp_title"))
+            self._provider_config_desc.configure(text=t("wizard.provider.frp_desc"))
+            self._frp_config_frame.pack(fill="x")
+
     def _update_confirm_text(self) -> None:
+        provider = self._provider_var.get()
         token = self._token_var.get().strip()
-        lines = [
-            t(
-                "wizard.confirm.ngrok",
-                value=token if token else t("wizard.confirm.not_set"),
-            ),
-            t("wizard.confirm.use_ngrok"),
-            t("wizard.confirm.cursor_api_key"),
-        ]
+        cf_token = self._cf_token_var.get().strip()
+        lines = [t("wizard.confirm.provider", value=provider)]
+
+        if provider == "ngrok":
+            lines.append(
+                t("wizard.confirm.ngrok", value=token if token else t("wizard.confirm.not_set"))
+            )
+        elif provider == "cloudflare":
+            if cf_token:
+                lines.append(t("wizard.confirm.cloudflare_token", value=cf_token))
+            else:
+                lines.append(t("wizard.confirm.cloudflare"))
+        elif provider == "frp":
+            lines.append(
+                t("wizard.confirm.frp_server",
+                  value=self._frp_server_var.get().strip() or t("wizard.confirm.not_set"))
+            )
+            lines.append(
+                t("wizard.confirm.frp_port",
+                  value=self._frp_port_var.get().strip() or "7000")
+            )
+
+        lines.append(t("wizard.confirm.cursor_api_key"))
         self._confirm_text.configure(state="normal")
         self._confirm_text.delete("1.0", "end")
         self._confirm_text.insert("1.0", "\n".join(lines))
@@ -812,17 +1038,41 @@ class SetupWizard(tk.Frame):
 
     def _finish(self) -> None:
         """完成引导，调用回调。"""
+        provider = self._provider_var.get()
         token = self._token_var.get().strip()
+        cf_token = self._cf_token_var.get().strip()
 
-        if not token:
+        if provider == "ngrok" and not token:
             messagebox.showwarning(
                 t("wizard.warn.missing_token.title"),
                 t("wizard.warn.missing_token.body"),
             )
-            self._show_step(1)
+            self._show_step(2)  # 回到配置页
             return
 
-        self._on_complete(ngrok_token=token)
+        if provider == "frp" and not self._frp_server_var.get().strip():
+            messagebox.showwarning(
+                t("wizard.warn.missing_token.title"),
+                t("wizard.warn.missing_frp_server"),
+            )
+            self._show_step(2)
+            return
+
+        # 传递所有配置
+        frp_config = {}
+        if provider == "frp":
+            frp_config = {
+                "frp_server_addr": self._frp_server_var.get().strip(),
+                "frp_server_port": self._frp_port_var.get().strip() or "7000",
+                "frp_auth_token": self._frp_token_var.get().strip(),
+            }
+
+        self._on_complete(
+            ngrok_token=token,
+            provider=provider,
+            frp_config=frp_config,
+            cf_token=cf_token,
+        )
 
     def _on_language_selected(self, _event: Any = None) -> None:
         selected = self._language_var.get()
@@ -1090,14 +1340,32 @@ class Dashboard(tk.Frame):
 
         section_title(sf, t("dashboard.credentials.title")).pack(anchor="w", pady=(0, 10))
 
-        self._ngrok_token_var = tk.StringVar(value=read_authtoken() or "")
+        # 根据隧道提供商类型确定凭证标签
+        provider = self._config.tunnel_provider
+        if provider == "ngrok":
+            provider_label_key = "dashboard.credentials.ngrok"
+            self._ngrok_token_var = tk.StringVar(value=read_authtoken() or "")
+            self._provider_token_var = self._ngrok_token_var
+        elif provider == "cloudflare":
+            provider_label_key = "dashboard.credentials.cf_token"
+            self._cf_dash_token_var = tk.StringVar(value=self._config.cloudflare_token or "")
+            self._provider_token_var = self._cf_dash_token_var
+        elif provider == "frp":
+            provider_label_key = "dashboard.credentials.frp_token"
+            self._frp_dash_token_var = tk.StringVar(value=self._config.frp_auth_token or "")
+            self._provider_token_var = self._frp_dash_token_var
+        else:
+            provider_label_key = "dashboard.credentials.ngrok"
+            self._ngrok_token_var = tk.StringVar(value="")
+            self._provider_token_var = self._ngrok_token_var
+
         self._deepseek_api_key_var = tk.StringVar(
             value=self._config.deepseek_api_key or ""
         )
         self._credential_labels: list[tk.Label] = []
 
         for label_key, var in (
-            ("dashboard.credentials.ngrok", self._ngrok_token_var),
+            (provider_label_key, self._provider_token_var),
             ("dashboard.credentials.deepseek", self._deepseek_api_key_var),
         ):
             row = tk.Frame(sf, bg=COLORS["card"])
@@ -1147,6 +1415,45 @@ class Dashboard(tk.Frame):
         )
         self._save_credentials_btn.configure(font=FONTS["body"], padx=16, pady=6)
         self._save_credentials_btn.pack(anchor="w")
+
+        # Cloudflare AI Gateway 配置
+        cf_ai_row = tk.Frame(sf, bg=COLORS["card"])
+        cf_ai_row.pack(fill="x", pady=(12, 4))
+        self._cf_ai_label = tk.Label(
+            cf_ai_row,
+            text=f"{t('dashboard.credentials.cf_ai_gateway')}:",
+            font=FONTS["small"],
+            bg=COLORS["card"],
+            fg=COLORS["text_dim"],
+            width=14,
+            anchor="e",
+        )
+        self._cf_ai_label.pack(side="left", padx=(0, 10))
+        self._cf_ai_var = tk.StringVar(value=self._config.cloudflare_ai_gateway or "")
+        entry_box_cf = inset_frame(cf_ai_row)
+        entry_box_cf.pack(side="left", fill="x", expand=True)
+        cf_entry = tk.Entry(
+            entry_box_cf,
+            textvariable=self._cf_ai_var,
+            font=FONTS["mono"],
+            bg=COLORS["input"],
+            fg=COLORS["fg"],
+            insertbackground=COLORS["fg"],
+            relief="flat",
+            borderwidth=0,
+        )
+        cf_entry.pack(fill="x", ipady=6, padx=8, pady=4)
+
+        cf_ai_hint = tk.Label(
+            sf,
+            text=t("dashboard.credentials.cf_ai_gateway_hint"),
+            font=FONTS["caption"],
+            bg=COLORS["card"],
+            fg=COLORS["text_muted"],
+            wraplength=520,
+            justify="left",
+        )
+        cf_ai_hint.pack(anchor="w", padx=(0, 0), pady=(0, 8))
 
         section_divider(sf)
 
@@ -1286,8 +1593,17 @@ class Dashboard(tk.Frame):
         self._clear_data_btn.pack(anchor="w")
 
     def _refresh_credentials(self) -> None:
-        if hasattr(self, "_ngrok_token_var"):
+        provider = self._config.tunnel_provider
+        if provider == "ngrok" and hasattr(self, "_ngrok_token_var"):
             self._ngrok_token_var.set(read_authtoken() or "")
+        elif provider == "cloudflare" and hasattr(self, "_cf_dash_token_var"):
+            try:
+                refreshed = ProxyConfig.from_file()
+                self._cf_dash_token_var.set(refreshed.cloudflare_token or "")
+            except Exception:
+                self._cf_dash_token_var.set("")
+        elif provider == "frp" and hasattr(self, "_frp_dash_token_var"):
+            self._frp_dash_token_var.set(self._config.frp_auth_token or "")
         if hasattr(self, "_deepseek_api_key_var"):
             try:
                 refreshed = ProxyConfig.from_file()
@@ -1297,29 +1613,60 @@ class Dashboard(tk.Frame):
                 self._deepseek_api_key_var.set("")
 
     def _save_credentials(self) -> None:
-        ngrok_token = self._ngrok_token_var.get().strip()
+        provider = self._config.tunnel_provider
+        provider_token = self._provider_token_var.get().strip()
         api_key = self._deepseek_api_key_var.get().strip()
-        ngrok_skipped = False
+        cf_ai_gateway = self._cf_ai_var.get().strip()
+        token_skipped = False
 
-        if ngrok_token:
-            try:
-                configure_authtoken(ngrok_token)
-            except Exception as exc:
-                messagebox.showerror(
-                    t("dashboard.credentials.title"),
-                    t("dashboard.credentials.ngrok_save_failed", error=exc),
-                )
-                return
-        else:
-            ngrok_skipped = True
+        if provider == "ngrok":
+            if provider_token:
+                try:
+                    configure_authtoken(provider_token)
+                except Exception as exc:
+                    messagebox.showerror(
+                        t("dashboard.credentials.title"),
+                        t("dashboard.credentials.ngrok_save_failed", error=exc),
+                    )
+                    return
+            else:
+                token_skipped = True
 
         try:
-            update_config_file(
-                {"deepseek_api_key": api_key},
-            )
+            updates: dict[str, Any] = {"deepseek_api_key": api_key}
+
+            # 保存提供商 token
+            if provider == "ngrok":
+                pass  # configure_authtoken 已经处理了
+            elif provider == "cloudflare":
+                updates["cloudflare_token"] = provider_token if provider_token else None
+            elif provider == "frp":
+                updates["frp_auth_token"] = provider_token if provider_token else None
+
+            # 处理 AI Gateway 设置
+            if cf_ai_gateway:
+                parts = cf_ai_gateway.split("/", 1)
+                if len(parts) == 2:
+                    updates["cloudflare_ai_gateway"] = cf_ai_gateway
+                    from .providers.cloudflare_provider import build_ai_gateway_url
+                    gateway_url = build_ai_gateway_url(parts[0], parts[1])
+                    LOG.info("已配置 Cloudflare AI Gateway: %s", gateway_url)
+                else:
+                    messagebox.showwarning(
+                        t("dashboard.credentials.title"),
+                        t("dashboard.credentials.cf_ai_gateway_invalid"),
+                    )
+                    return
+            else:
+                updates["cloudflare_ai_gateway"] = None
+
+            update_config_file(updates)
             self._config = replace(
                 self._config,
                 deepseek_api_key=api_key or None,
+                cloudflare_ai_gateway=cf_ai_gateway or None,
+                cloudflare_token=provider_token if provider == "cloudflare" and provider_token else self._config.cloudflare_token,
+                frp_auth_token=provider_token if provider == "frp" and provider_token else self._config.frp_auth_token,
             )
         except Exception as exc:
             messagebox.showerror(
@@ -1328,7 +1675,7 @@ class Dashboard(tk.Frame):
             )
             return
 
-        if ngrok_skipped:
+        if token_skipped:
             messagebox.showinfo(
                 t("dashboard.credentials.title"),
                 f"{t('dashboard.credentials.saved')}\n{t('dashboard.credentials.ngrok_empty')}",
@@ -1643,9 +1990,9 @@ class DeepSeekProxyGUI:
         self._dashboard: Dashboard | None = None
         self._wizard: SetupWizard | None = None
 
-        # 检查是否已配置
+        # 检查是否已配置（配置文件存在即表示已完成引导）
         config_path = default_config_path()
-        if config_path.exists() and has_authtoken_configured():
+        if config_path.exists():
             self._show_dashboard()
         else:
             self._show_wizard()
@@ -1663,22 +2010,34 @@ class DeepSeekProxyGUI:
         )
         self._wizard.pack(fill="both", expand=True)
 
-    def _on_setup_complete(self, ngrok_token: str) -> None:
+    def _on_setup_complete(self, ngrok_token: str, provider: str = "cloudflare", frp_config: dict | None = None, cf_token: str = "") -> None:
         """引导完成后的处理。"""
         try:
-            # 配置 ngrok authtoken
-            configure_authtoken(ngrok_token)
-            LOG.info(t("proxy.log.authtoken_ok"))
+            if provider == "ngrok":
+                # 配置 ngrok authtoken
+                configure_authtoken(ngrok_token)
+                LOG.info(t("proxy.log.authtoken_ok"))
+            elif provider == "cloudflare":
+                LOG.info(t("proxy.log.cf_configured"))
 
-            # 创建默认配置文件
+            # 创建默认配置文件，包含隧道提供商信息
             config_path = default_config_path()
+            config_updates: dict[str, Any] = {"tunnel_provider": provider}
+            if provider == "frp" and frp_config:
+                config_updates.update(frp_config)
+            elif provider == "cloudflare":
+                config_updates["cloudflare_token"] = cf_token if cf_token else None
+
             if not config_path.exists():
                 populate_default_config_file(config_path)
+
+            from .config import update_config_file as _update_config
+            _update_config(config_updates, config_path)
 
             self._show_dashboard()
         except Exception as exc:
             error_text = str(exc)
-            if is_endpoint_already_online_error(error_text):
+            if "endpoint_already_online" in error_text or "ERR_NGROK_334" in error_text:
                 body = t("setup.error.endpoint_in_use", error=error_text)
             else:
                 body = t("setup.error.body", error=error_text)
@@ -1717,6 +2076,7 @@ class DeepSeekProxyGUI:
         self._show_wizard()
         if self._wizard is not None:
             self._wizard._token_var.set("")
+            self._wizard._cf_token_var.set("")
             self._wizard._show_step(1)
 
     def _reload_interface(self) -> None:
@@ -1728,6 +2088,8 @@ class DeepSeekProxyGUI:
             wizard_state = {
                 "step": self._wizard._current_step,
                 "token": self._wizard._token_var.get(),
+                "provider": self._wizard._provider_var.get(),
+                "cf_token": self._wizard._cf_token_var.get(),
             }
 
         self._root.title(t("app.title"))
@@ -1741,12 +2103,14 @@ class DeepSeekProxyGUI:
             self._wizard = None
 
         config_path = default_config_path()
-        if config_path.exists() and has_authtoken_configured():
+        if config_path.exists():
             self._show_dashboard()
         else:
             self._show_wizard()
             if wizard_state is not None and self._wizard is not None:
                 self._wizard._token_var.set(wizard_state["token"])
+                self._wizard._provider_var.set(wizard_state.get("provider", "cloudflare"))
+                self._wizard._cf_token_var.set(wizard_state.get("cf_token", ""))
                 self._wizard._show_step(wizard_state["step"])
 
     def _on_close(self) -> None:
