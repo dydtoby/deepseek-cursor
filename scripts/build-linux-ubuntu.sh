@@ -11,5 +11,12 @@ rsync -a --exclude dist --exclude build --exclude .git "$SRC/" "$BUILD/"
 cd "$BUILD"
 python3 build_installer.py
 mkdir -p "$SRC/dist"
-cp -f dist/DeepSeekCursorProxy-v0.1.1-portable-linux-amd64.zip "$SRC/dist/"
+APP_VER="$(python3 - <<'PY'
+import tomllib
+from pathlib import Path
+data = tomllib.loads(Path('pyproject.toml').read_text(encoding='utf-8'))
+print(data['project']['version'])
+PY
+)"
+cp -f "dist/DeepSeekCursorProxy-v${APP_VER}-portable-linux-amd64.zip" "$SRC/dist/"
 ls -lh "$SRC/dist/"*.zip

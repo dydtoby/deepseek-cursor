@@ -55,7 +55,7 @@ GUI 支持：
 从发布页或 `dist/` 目录获取：
 
 ```text
-DeepSeekCursorProxy-v0.1.1-portable.zip
+DeepSeekCursorProxy-v0.1.2-portable.zip
 ```
 
 解压到任意目录，例如：
@@ -146,8 +146,8 @@ https://example.ngrok-free.dev/v1
 #### 方式 A：GUI 便携版（与 Windows 类似）
 
 1. 从 Release 下载对应平台的 ZIP，例如：  
-   `DeepSeekCursorProxy-v0.1.1-portable-darwin-arm64.zip`  
-   `DeepSeekCursorProxy-v0.1.1-portable-linux-amd64.zip`
+   `DeepSeekCursorProxy-v0.1.2-portable-darwin-arm64.zip`  
+   `DeepSeekCursorProxy-v0.1.2-portable-linux-amd64.zip`
 2. 解压后运行 `DeepSeekCursorProxy`（macOS 可能需在「隐私与安全性」中允许）
 3. Linux 需安装 tkinter：`sudo apt install python3-tk`（Debian/Ubuntu）或发行版等价包
 4. 按引导配置 ngrok authtoken 并启动代理
@@ -192,7 +192,7 @@ python build_installer.py
 
 | 文件 | 说明 |
 |------|------|
-| `dist/DeepSeekCursorProxy-v0.1.1-portable-<os>-<arch>.zip` | 当前平台的便携版 ZIP |
+| `dist/DeepSeekCursorProxy-v0.1.2-portable-<os>-<arch>.zip` | 当前平台的便携版 ZIP |
 | `dist/DeepSeekCursorProxy/DeepSeekCursorProxy[.exe]` | 可直接运行 |
 
 > Windows 上若已安装 [Inno Setup 6](https://jrsoftware.org/isinfo.php)，还会生成 `.exe` 安装程序。
@@ -215,6 +215,52 @@ python build_installer.py
 | Windows | `%LOCALAPPDATA%\ngrok\ngrok.yml` |
 | macOS | `~/Library/Application Support/ngrok/ngrok.yml` |
 | Linux | `~/.config/ngrok/ngrok.yml` |
+
+---
+
+### 服务化运行（Windows / Linux）
+
+- 配置文件新增：
+  - `service_mode: true|false`
+  - `auto_start: true|false`
+  - `service_name: deepseek-cursor-proxy`
+- CLI 也支持：
+
+```bash
+deepseek-cursor-proxy --service-mode --no-ngrok
+```
+
+Linux 用户服务（systemd）：
+
+```bash
+chmod +x install-linux-service.sh
+./install-linux-service.sh
+systemctl --user start deepseek-cursor-proxy.service
+systemctl --user status deepseek-cursor-proxy.service
+```
+
+Windows 开机启动：
+
+- GUI 高级设置中的「服务化设置」会创建开机启动脚本到 Startup 目录。
+
+---
+
+### 自动更新
+
+- GUI 高级设置提供「检查更新」按钮（基于 GitHub Releases API）。
+- 支持更新通道：
+  - `stable`（默认，读取 latest）
+  - `prerelease`（读取全部 release 并取最新）
+
+---
+
+### 发布签名与校验
+
+- Release 流水线会生成 `SHA256SUMS*.txt` 校验文件。
+- Windows 支持可选 Authenticode 签名：
+  - `WINDOWS_PFX_BASE64`
+  - `WINDOWS_PFX_PASSWORD`
+- 若未配置证书，仍会正常发布未签名构建。
 
 ---
 
@@ -258,7 +304,7 @@ Provider returned error:
 ### GUI (Portable)
 
 1. Download the ZIP for your OS/arch from Releases, e.g.  
-   `DeepSeekCursorProxy-v0.1.1-portable-darwin-arm64.zip`
+   `DeepSeekCursorProxy-v0.1.2-portable-darwin-arm64.zip`
 2. Run `DeepSeekCursorProxy` (or `DeepSeekCursorProxy.exe` on Windows)
 3. Complete the setup wizard (ngrok authtoken required)
 4. Click **Start Proxy** and copy the **Cursor Base URL**

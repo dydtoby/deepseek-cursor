@@ -902,6 +902,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--service-mode",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Run in background service mode (defaults to no-ngrok unless explicitly enabled)",
+    )
+    parser.add_argument(
+        "--auto-start",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Enable/disable autostart hint in runtime config",
+    )
+    parser.add_argument(
+        "--update-channel",
+        choices=["stable", "prerelease"],
+        help="Preferred update channel for GUI update checks",
+    )
+    parser.add_argument(
         "--verbose",
         action=argparse.BooleanOptionalAction,
         default=None,
@@ -1272,6 +1289,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.ngrok_url is not None:
         stripped = str(args.ngrok_url).strip()
         updates["ngrok_url"] = stripped if stripped else None
+    if args.service_mode is not None:
+        updates["service_mode"] = args.service_mode
+    if args.auto_start is not None:
+        updates["auto_start"] = args.auto_start
+    if args.update_channel is not None:
+        updates["update_channel"] = args.update_channel
     if args.verbose is not None:
         updates["verbose"] = args.verbose
     if args.trace_dir is not None:
@@ -1296,6 +1319,8 @@ def main(argv: list[str] | None = None) -> int:
         updates["missing_reasoning_strategy"] = args.missing_reasoning_strategy
     if updates:
         config = replace(config, **updates)
+    if config.service_mode and args.ngrok is None:
+        config = replace(config, ngrok=False)
 
     configure_logging(verbose=config.verbose)
     legacy_cleanup = migrate_and_cleanup_legacy_tokens()
@@ -1375,6 +1400,8 @@ def main(argv: list[str] | None = None) -> int:
         LOG.warning("trace logging enabled; prompts and code will be written to disk")
     if public_url is None and not config.ngrok:
         LOG.info("public_tunnel: off")
+    if config.service_mode:
+        LOG.info("service_mode: enabled")
     if config.verbose:
         LOG.info("upstream_url: %s/chat/completions", config.upstream_base_url)
     LOG.info("local_base_url: %s", local_base_url)

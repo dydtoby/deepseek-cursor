@@ -82,6 +82,27 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dashboard.settings.port": "端口",
         "dashboard.settings.thinking": "思考模式",
         "dashboard.settings.reasoning_effort": "推理强度",
+        "dashboard.settings.update_channel": "更新通道",
+        "dashboard.settings.service_mode": "服务模式",
+        "dashboard.update.title": "检查更新",
+        "dashboard.update.check": "检查更新",
+        "dashboard.update.failed": "无法连接更新服务，请稍后重试。",
+        "dashboard.update.available": (
+            "发现新版本：{latest}\n"
+            "当前版本：{current}\n\n"
+            "是否打开发布页下载？"
+        ),
+        "dashboard.update.latest": "当前已是最新版本（{current}）。",
+        "dashboard.service.title": "服务模式",
+        "dashboard.service.install": "服务化设置",
+        "dashboard.service.linux_hint": (
+            "Linux 用户服务安装命令：\n\n"
+            "  chmod +x install-linux-service.sh\n"
+            "  ./install-linux-service.sh\n\n"
+            "然后使用 systemctl --user 管理服务。"
+        ),
+        "dashboard.service.windows_done": "已创建开机启动脚本：\n{path}",
+        "dashboard.service.unsupported": "当前平台暂不支持该操作。",
         "dashboard.clear_data.btn": "清除缓存与 Token",
         "dashboard.clear_data.confirm.title": "确认清除",
         "dashboard.clear_data.confirm.body": (
@@ -204,6 +225,27 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dashboard.settings.port": "Port",
         "dashboard.settings.thinking": "Thinking",
         "dashboard.settings.reasoning_effort": "Reasoning effort",
+        "dashboard.settings.update_channel": "Update channel",
+        "dashboard.settings.service_mode": "Service mode",
+        "dashboard.update.title": "Check Updates",
+        "dashboard.update.check": "Check Updates",
+        "dashboard.update.failed": "Failed to contact update service. Please retry later.",
+        "dashboard.update.available": (
+            "New version found: {latest}\n"
+            "Current version: {current}\n\n"
+            "Open release page now?"
+        ),
+        "dashboard.update.latest": "You are up to date ({current}).",
+        "dashboard.service.title": "Service Mode",
+        "dashboard.service.install": "Service Setup",
+        "dashboard.service.linux_hint": (
+            "Install Linux user service with:\n\n"
+            "  chmod +x install-linux-service.sh\n"
+            "  ./install-linux-service.sh\n\n"
+            "Then manage it via systemctl --user."
+        ),
+        "dashboard.service.windows_done": "Startup script created:\n{path}",
+        "dashboard.service.unsupported": "This operation is not supported on this platform.",
         "dashboard.clear_data.btn": "Clear Cache & Token",
         "dashboard.clear_data.confirm.title": "Confirm Clear",
         "dashboard.clear_data.confirm.body": (

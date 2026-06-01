@@ -8,7 +8,11 @@ import unittest
 from unittest.mock import patch
 
 from deepseek_cursor_proxy.config import (
+    DEFAULT_AUTO_START,
     DEFAULT_COLLAPSIBLE_REASONING,
+    DEFAULT_SERVICE_MODE,
+    DEFAULT_SERVICE_NAME,
+    DEFAULT_UPDATE_CHANNEL,
     DEFAULT_MISSING_REASONING_STRATEGY,
     DEFAULT_NGROK,
     DEFAULT_PORT,
@@ -46,6 +50,10 @@ class ConfigTests(unittest.TestCase):
                 DEFAULT_COLLAPSIBLE_REASONING,
             )
             self.assertIsNone(ProxyConfig().trace_dir)
+            self.assertEqual(ProxyConfig().service_mode, DEFAULT_SERVICE_MODE)
+            self.assertEqual(ProxyConfig().auto_start, DEFAULT_AUTO_START)
+            self.assertEqual(ProxyConfig().service_name, DEFAULT_SERVICE_NAME)
+            self.assertEqual(ProxyConfig().update_channel, DEFAULT_UPDATE_CHANNEL)
 
     def test_missing_default_config_file_is_populated(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -78,7 +86,8 @@ class ConfigTests(unittest.TestCase):
                 f"{str(DEFAULT_COLLAPSIBLE_REASONING).lower()}",
                 config_text,
             )
-            self.assertEqual(stat.S_IMODE(config_path.stat().st_mode), 0o600)
+            if os.name != "nt":
+                self.assertEqual(stat.S_IMODE(config_path.stat().st_mode), 0o600)
             self.assertEqual(config.upstream_model, DEFAULT_UPSTREAM_MODEL)
             self.assertEqual(config.ngrok, DEFAULT_NGROK)
             self.assertEqual(
@@ -138,6 +147,10 @@ class ConfigTests(unittest.TestCase):
                         "reasoning_cache_max_age_seconds: 60",
                         "reasoning_cache_max_rows: 50",
                         "ngrok_url: https://example.ngrok.dev",
+                        "service_mode: true",
+                        "auto_start: true",
+                        "service_name: custom-proxy-service",
+                        "update_channel: prerelease",
                     ]
                 ),
                 encoding="utf-8",
@@ -163,6 +176,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.reasoning_cache_max_age_seconds, 60)
         self.assertEqual(config.reasoning_cache_max_rows, 50)
         self.assertEqual(config.ngrok_url, "https://example.ngrok.dev")
+        self.assertTrue(config.service_mode)
+        self.assertTrue(config.auto_start)
+        self.assertEqual(config.service_name, "custom-proxy-service")
+        self.assertEqual(config.update_channel, "prerelease")
 
     def test_invalid_config_values_fall_back_to_defaults(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -259,22 +276,23 @@ class ConfigTests(unittest.TestCase):
             config_path = Path(temp_dir) / "config.yaml"
             config_path.write_text("verbose: false\n", encoding="utf-8")
 
-        with patch.dict(
-            "os.environ",
-            {
-                "PROXY_VERBOSE": "true",
-                "DEEPSEEK_CURSOR_PROXY_CONFIG_PATH": "/ignored.yaml",
-            },
-            clear=True,
-        ):
-            config = ProxyConfig.from_file(config_path=config_path)
-            self.assertEqual(
-                dict(os.environ),
+        with patch("deepseek_cursor_proxy.config.Path.home", return_value=Path(temp_dir)):
+            with patch.dict(
+                "os.environ",
                 {
                     "PROXY_VERBOSE": "true",
                     "DEEPSEEK_CURSOR_PROXY_CONFIG_PATH": "/ignored.yaml",
                 },
-            )
+                clear=True,
+            ):
+                config = ProxyConfig.from_file(config_path=config_path)
+                self.assertEqual(
+                    dict(os.environ),
+                    {
+                        "PROXY_VERBOSE": "true",
+                        "DEEPSEEK_CURSOR_PROXY_CONFIG_PATH": "/ignored.yaml",
+                    },
+                )
 
         self.assertFalse(config.verbose)
 

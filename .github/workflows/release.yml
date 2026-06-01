@@ -1,0 +1,99 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller PyYAML pillow
+
+      - name: Build portable package
+        run: python build_installer.py
+
+      - name: Sign installer (optional)
+        if: ${{ secrets.WINDOWS_PFX_BASE64 != '' }}
+        shell: pwsh
+        run: |
+          $pfxPath = "$env:RUNNER_TEMP\codesign.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String("${{ secrets.WINDOWS_PFX_BASE64 }}"))
+          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe | Select-Object -First 1).FullName
+          & $signtool sign /f $pfxPath /p "${{ secrets.WINDOWS_PFX_PASSWORD }}" /tr "http://timestamp.digicert.com" /td SHA256 /fd SHA256 "dist\DeepSeekCursorProxy-Setup.exe"
+
+      - name: Generate checksums
+        shell: pwsh
+        run: |
+          Get-FileHash dist\*.zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $([System.IO.Path]::GetFileName($_.Path))" } | Set-Content dist\SHA256SUMS.txt
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-dist
+          path: dist/*
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk dpkg-dev
+          python -m pip install --upgrade pip
+          pip install pyinstaller PyYAML pillow
+
+      - name: Build portable + deb
+        run: |
+          chmod +x scripts/build-linux-wsl.sh scripts/build-linux-deb.sh
+          ./scripts/build-linux-wsl.sh
+
+      - name: Generate checksums
+        run: |
+          sha256sum dist/*.zip dist/*.deb > dist/SHA256SUMS-linux.txt
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-dist
+          path: dist/*
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-linux]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Publish assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-assets/windows-dist/*.zip
+            release-assets/windows-dist/*.txt
+            release-assets/linux-dist/*.zip
+            release-assets/linux-dist/*.deb
+            release-assets/linux-dist/*.txt

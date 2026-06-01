@@ -1,0 +1,14 @@
+[Unit]
+Description=DeepSeek Cursor Proxy Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.deepseek-cursor-proxy
+ExecStart=%h/.local/bin/deepseek-cursor-proxy --no-ngrok
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -22,6 +22,9 @@ rsync -a --delete "${SCRIPT_DIR}/" "${INSTALL_DIR}/"
 if [[ "$(uname -s)" != "Darwin" ]]; then
   mkdir -p "${BIN_DIR}"
   ln -sf "${INSTALL_DIR}/DeepSeekCursorProxy" "${BIN_DIR}/deepseek-cursor-proxy-gui"
+  if [[ -f "${INSTALL_DIR}/install-linux-service.sh" ]]; then
+    chmod +x "${INSTALL_DIR}/install-linux-service.sh"
+  fi
   echo "已创建命令链接: ${BIN_DIR}/deepseek-cursor-proxy-gui"
 fi
 
@@ -32,4 +35,7 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
 else
   echo "  \"${INSTALL_DIR}/DeepSeekCursorProxy\""
   echo "  或: deepseek-cursor-proxy-gui"
+  if [[ -f "${INSTALL_DIR}/install-linux-service.sh" ]]; then
+    echo "  安装用户服务: \"${INSTALL_DIR}/install-linux-service.sh\""
+  fi
 fi

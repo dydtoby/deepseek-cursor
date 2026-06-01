@@ -23,7 +23,7 @@ FREEZE_OUTPUT = DIST_DIR / "DeepSeekCursorProxy"
 INSTALLER_OUTPUT = DIST_DIR / "DeepSeekCursorProxy-Setup.exe"
 
 APP_NAME = "DeepSeek Cursor Proxy"
-APP_VERSION = "0.1.2"
+APP_VERSION = "0.1.3"
 APP_PUBLISHER = "DeepSeek Cursor Proxy"
 
 INNO_SETUP_PATHS = [
@@ -164,6 +164,13 @@ def step_freeze() -> Path:
         if install_sh_src.is_file():
             shutil.copy2(install_sh_src, output_dir / "install.sh")
             (output_dir / "install.sh").chmod(0o755)
+        service_install_src = PROJECT_ROOT / "scripts" / "install-linux-service.sh"
+        if service_install_src.is_file():
+            shutil.copy2(service_install_src, output_dir / "install-linux-service.sh")
+            (output_dir / "install-linux-service.sh").chmod(0o755)
+        service_unit_src = PROJECT_ROOT / "scripts" / "deepseek-cursor-proxy.service"
+        if service_unit_src.is_file():
+            shutil.copy2(service_unit_src, output_dir / "deepseek-cursor-proxy.service")
 
     start_sh_src = PROJECT_ROOT / "scripts" / "start-proxy.sh"
     if start_sh_src.is_file():

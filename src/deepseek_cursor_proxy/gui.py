@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Any
@@ -21,6 +22,7 @@ from .config import (
     default_config_path,
     populate_default_config_file,
 )
+from . import __version__
 from .i18n import SUPPORTED_LOCALES, get_locale, init_locale, set_locale, t
 from .ngrok_manager import (
     NgrokTunnelManager,
@@ -36,6 +38,7 @@ from .server import DeepSeekProxyHandler, DeepSeekProxyServer
 from .reasoning_store import ReasoningStore
 from .platform_support import gui_fonts
 from .tunnel import local_tunnel_target
+from .updater import fetch_latest_release, has_update
 
 LOG = logging.getLogger("deepseek_cursor_proxy.gui")
 
@@ -750,6 +753,8 @@ class Dashboard(tk.Frame):
         ("dashboard.settings.port", "port"),
         ("dashboard.settings.thinking", "thinking"),
         ("dashboard.settings.reasoning_effort", "reasoning_effort"),
+        ("dashboard.settings.update_channel", "update_channel"),
+        ("dashboard.settings.service_mode", "service_mode"),
     )
 
     def __init__(
@@ -972,6 +977,34 @@ class Dashboard(tk.Frame):
         )
         self._clear_data_btn.pack(anchor="w")
 
+        tool_row = tk.Frame(sf, bg=COLORS["surface"])
+        tool_row.pack(fill="x", pady=(10, 0))
+        self._check_update_btn = tk.Button(
+            tool_row,
+            text=t("dashboard.update.check"),
+            font=FONTS["small"],
+            bg=COLORS["bg"],
+            fg=COLORS["accent"],
+            relief="flat",
+            padx=10,
+            pady=3,
+            command=self._check_updates,
+        )
+        self._check_update_btn.pack(side="left")
+
+        self._service_btn = tk.Button(
+            tool_row,
+            text=t("dashboard.service.install"),
+            font=FONTS["small"],
+            bg=COLORS["bg"],
+            fg=COLORS["accent_dim"],
+            relief="flat",
+            padx=10,
+            pady=3,
+            command=self._install_service_helper,
+        )
+        self._service_btn.pack(side="left", padx=(8, 0))
+
     def _clear_data(self) -> None:
         if not messagebox.askyesno(
             t("dashboard.clear_data.confirm.title"),
@@ -1047,6 +1080,66 @@ class Dashboard(tk.Frame):
         set_locale(selected)
         if self._on_language_change is not None:
             self._on_language_change()
+
+    def _check_updates(self) -> None:
+        release = fetch_latest_release(self._config)
+        if release is None:
+            messagebox.showwarning(
+                t("dashboard.update.title"),
+                t("dashboard.update.failed"),
+            )
+            return
+        if has_update(__version__, release.tag_name):
+            open_release = messagebox.askyesno(
+                t("dashboard.update.title"),
+                t(
+                    "dashboard.update.available",
+                    current=__version__,
+                    latest=release.tag_name,
+                ),
+            )
+            if open_release:
+                webbrowser.open(release.html_url)
+            return
+        messagebox.showinfo(
+            t("dashboard.update.title"),
+            t("dashboard.update.latest", current=__version__),
+        )
+
+    def _install_service_helper(self) -> None:
+        if sys.platform == "linux":
+            messagebox.showinfo(
+                t("dashboard.service.title"),
+                t("dashboard.service.linux_hint"),
+            )
+            return
+        if sys.platform == "win32":
+            startup_dir = (
+                Path.home()
+                / "AppData"
+                / "Roaming"
+                / "Microsoft"
+                / "Windows"
+                / "Start Menu"
+                / "Programs"
+                / "Startup"
+            )
+            startup_dir.mkdir(parents=True, exist_ok=True)
+            bat_path = startup_dir / "DeepSeekCursorProxy-startup.bat"
+            bat_path.write_text(
+                "@echo off\r\n"
+                "start \"\" \"%LOCALAPPDATA%\\Programs\\DeepSeekCursorProxy\\DeepSeekCursorProxy.exe\"\r\n",
+                encoding="utf-8",
+            )
+            messagebox.showinfo(
+                t("dashboard.service.title"),
+                t("dashboard.service.windows_done", path=str(bat_path)),
+            )
+            return
+        messagebox.showinfo(
+            t("dashboard.service.title"),
+            t("dashboard.service.unsupported"),
+        )
 
     def _toggle_settings(self) -> None:
         self._settings_visible = not self._settings_visible

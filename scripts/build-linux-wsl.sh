@@ -20,5 +20,8 @@ python3 -m pip install --upgrade pip
 python3 -m pip install pyinstaller PyYAML pillow
 
 python3 build_installer.py
+chmod +x scripts/build-linux-deb.sh
+scripts/build-linux-deb.sh
 
 ls -lh dist/*.zip
+ls -lh dist/*.deb

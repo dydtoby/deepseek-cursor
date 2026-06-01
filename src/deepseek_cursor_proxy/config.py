@@ -25,6 +25,10 @@ DEFAULT_DISPLAY_REASONING = True
 DEFAULT_COLLAPSIBLE_REASONING = True
 DEFAULT_NGROK = True
 DEFAULT_VERBOSE = False
+DEFAULT_SERVICE_MODE = False
+DEFAULT_AUTO_START = False
+DEFAULT_SERVICE_NAME = "deepseek-cursor-proxy"
+DEFAULT_UPDATE_CHANNEL = "stable"
 DEFAULT_REQUEST_TIMEOUT = 300.0
 DEFAULT_MAX_REQUEST_BODY_BYTES = 20 * 1024 * 1024
 DEFAULT_CORS = False
@@ -51,6 +55,10 @@ host: {DEFAULT_HOST}
 port: {DEFAULT_PORT}
 ngrok: {str(DEFAULT_NGROK).lower()}
 verbose: {str(DEFAULT_VERBOSE).lower()}
+service_mode: {str(DEFAULT_SERVICE_MODE).lower()}
+auto_start: {str(DEFAULT_AUTO_START).lower()}
+service_name: {DEFAULT_SERVICE_NAME}
+update_channel: {DEFAULT_UPDATE_CHANNEL}
 request_timeout: {DEFAULT_REQUEST_TIMEOUT:g}
 max_request_body_bytes: {DEFAULT_MAX_REQUEST_BODY_BYTES}
 cors: {str(DEFAULT_CORS).lower()}
@@ -191,6 +199,13 @@ def normalize_missing_reasoning_strategy(value: Any) -> str:
     return DEFAULT_MISSING_REASONING_STRATEGY
 
 
+def normalize_update_channel(value: Any) -> str:
+    channel = as_str(value, DEFAULT_UPDATE_CHANNEL).strip().lower()
+    if channel in {"stable", "prerelease"}:
+        return channel
+    return DEFAULT_UPDATE_CHANNEL
+
+
 @dataclass(frozen=True)
 class ProxyConfig:
     host: str = DEFAULT_HOST
@@ -211,6 +226,10 @@ class ProxyConfig:
     verbose: bool = DEFAULT_VERBOSE
     ngrok: bool = DEFAULT_NGROK
     ngrok_url: str | None = None
+    service_mode: bool = DEFAULT_SERVICE_MODE
+    auto_start: bool = DEFAULT_AUTO_START
+    service_name: str = DEFAULT_SERVICE_NAME
+    update_channel: str = DEFAULT_UPDATE_CHANNEL
     trace_dir: Path | None = None
 
     @classmethod
@@ -292,4 +311,19 @@ class ProxyConfig:
                 DEFAULT_NGROK,
             ),
             ngrok_url=as_optional_str(setting_value(settings, "ngrok_url")),
+            service_mode=as_bool(
+                setting_value(settings, "service_mode"),
+                DEFAULT_SERVICE_MODE,
+            ),
+            auto_start=as_bool(
+                setting_value(settings, "auto_start"),
+                DEFAULT_AUTO_START,
+            ),
+            service_name=as_str(
+                setting_value(settings, "service_name"),
+                DEFAULT_SERVICE_NAME,
+            ),
+            update_channel=normalize_update_channel(
+                setting_value(settings, "update_channel")
+            ),
         )
