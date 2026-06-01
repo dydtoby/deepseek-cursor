@@ -32,14 +32,20 @@ jobs:
         run: python build_installer.py
 
       - name: Sign installer (optional)
-        if: ${{ secrets.WINDOWS_PFX_BASE64 != '' }}
         shell: pwsh
+        env:
+          WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64)) {
+            Write-Host "Skipping code signing (WINDOWS_PFX_BASE64 not configured)."
+            exit 0
+          }
           $pfxPath = "$env:RUNNER_TEMP\codesign.pfx"
-          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String("${{ secrets.WINDOWS_PFX_BASE64 }}"))
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
           $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe | Select-Object -First 1).FullName
           Get-ChildItem dist\*-Setup.exe | ForEach-Object {
-            & $signtool sign /f $pfxPath /p "${{ secrets.WINDOWS_PFX_PASSWORD }}" /tr "http://timestamp.digicert.com" /td SHA256 /fd SHA256 $_.FullName
+            & $signtool sign /f $pfxPath /p $env:WINDOWS_PFX_PASSWORD /tr "http://timestamp.digicert.com" /td SHA256 /fd SHA256 $_.FullName
           }
 
       - name: Generate checksums
