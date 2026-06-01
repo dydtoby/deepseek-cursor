@@ -249,6 +249,7 @@ class ProxyConfig:
     auto_start: bool = DEFAULT_AUTO_START
     service_name: str = DEFAULT_SERVICE_NAME
     update_channel: str = DEFAULT_UPDATE_CHANNEL
+    # GUI 备忘保存；代理转发 Cursor 请求头中的 Authorization，不使用此字段。
     deepseek_api_key: str | None = None
     trace_dir: Path | None = None
 
@@ -347,6 +348,6 @@ class ProxyConfig:
                 setting_value(settings, "update_channel")
             ),
             deepseek_api_key=as_optional_str(
-                setting_value_any(settings, "deepseek_api_key", "api_key")
+                setting_value(settings, "deepseek_api_key")
             ),
         )

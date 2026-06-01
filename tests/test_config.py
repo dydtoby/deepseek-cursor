@@ -271,6 +271,28 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ProxyConfig.from_file(config_path=config_path)
 
+    def test_deepseek_api_key_is_gui_memo_only_and_legacy_api_key_ignored(
+        self,
+    ) -> None:
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "config.yaml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        "api_key: sk-legacy-should-not-load",
+                        "deepseek_api_key: sk-memo",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            config = ProxyConfig.from_file(config_path=config_path)
+
+            self.assertEqual(config.deepseek_api_key, "sk-memo")
+
+            config_path.write_text('api_key: sk-legacy-only\n', encoding="utf-8")
+            config = ProxyConfig.from_file(config_path=config_path)
+            self.assertIsNone(config.deepseek_api_key)
+
     def test_process_environment_does_not_override_config(self) -> None:
         with TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.yaml"

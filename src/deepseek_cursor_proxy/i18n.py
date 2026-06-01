@@ -27,35 +27,24 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "wizard.subtitle": "首次运行 · 配置引导",
         "wizard.step.welcome": "欢迎",
         "wizard.step.ngrok": "ngrok",
-        "wizard.step.apikey": "API",
         "wizard.step.confirm": "确认",
         "wizard.welcome.title": "欢迎使用 DeepSeek Cursor Proxy",
         "wizard.welcome.body": (
             "本工具将帮助你在 Cursor 中使用 DeepSeek 思考模型。\n\n"
-            "配置只需两步：\n"
-            "  1. 输入 ngrok authtoken（免费注册获取）\n"
-            "  2. 输入 DeepSeek API Key（可选，也可在 Cursor 中配置）\n\n"
-            "完成后，代理将自动启动并提供一个 HTTPS URL，\n"
-            "将其填入 Cursor 的 Base URL 即可开始使用。"
+            "首次配置只需输入 ngrok authtoken（免费注册获取）。\n"
+            "DeepSeek API Key 请在 Cursor 自定义模型中填写；\n"
+            "代理会转发 Cursor 请求中的密钥，不会使用本应用内保存的密钥。\n\n"
+            "完成后，代理将提供 HTTPS URL，将其填入 Cursor 的 Base URL 即可。"
         ),
         "wizard.ngrok.title": "配置 ngrok Authtoken",
         "wizard.ngrok.desc": "ngrok 用于创建公网 HTTPS 隧道，让 Cursor 可以访问本地代理。",
         "wizard.ngrok.get_token": "获取 token: ",
         "wizard.ngrok.token_label": "ngrok Authtoken",
-        "wizard.apikey.title": "配置 DeepSeek API Key（可选）",
-        "wizard.apikey.desc": (
-            "你可以在本应用中配置 API Key，也可稍后在 Cursor 中直接配置。\n"
-            "两种方式选其一即可。如果你选择跳过，请确保在 Cursor 的\n"
-            "API Key 字段中填写你的 DeepSeek API Key。"
-        ),
-        "wizard.apikey.get_key": "获取 API Key: ",
-        "wizard.apikey.label": "DeepSeek API Key（可选）",
         "wizard.confirm.title": "确认配置",
         "wizard.confirm.ngrok": "  ngrok authtoken : {value}",
         "wizard.confirm.use_ngrok": "  使用 ngrok 隧道  : 是",
-        "wizard.confirm.api_key": "  DeepSeek API Key: {value}",
         "wizard.confirm.not_set": "(未填写)",
-        "wizard.confirm.skip_api_key": "(跳过，在 Cursor 中配置)",
+        "wizard.confirm.cursor_api_key": "  DeepSeek API Key: 请在 Cursor 模型设置中填写",
         "wizard.btn.prev": "上一步",
         "wizard.btn.next": "下一步",
         "wizard.btn.finish": "完成配置",
@@ -75,7 +64,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dashboard.url.label": "Cursor Base URL",
         "dashboard.url.wait": "等待启动...",
         "dashboard.url.wait_ngrok": "等待 ngrok 隧道...",
-        "dashboard.url.hint": "提示：在 Cursor 中添加自定义模型，Base URL 填入上方地址（需包含 /v1）",
+        "dashboard.url.hint": (
+            "提示：在 Cursor 中添加自定义模型，Base URL 填入上方地址（需包含 /v1），"
+            "API Key 在 Cursor 中填写（由 Cursor 随请求发送，非本应用保存项）"
+        ),
         "dashboard.btn.copy": " 复制 ",
         "dashboard.btn.copied": " 已复制 ",
         "dashboard.btn.start": "启动代理",
@@ -86,10 +78,13 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dashboard.settings.hide": "▾ 高级设置",
         "dashboard.credentials.title": "密钥",
         "dashboard.credentials.ngrok": "ngrok authtoken",
-        "dashboard.credentials.deepseek": "DeepSeek API Key",
+        "dashboard.credentials.deepseek": "DeepSeek API Key（备忘）",
+        "dashboard.credentials.deepseek_hint": (
+            "仅本地备忘保存，明文显示；代理请求使用 Cursor 中配置的 API Key。"
+        ),
         "dashboard.credentials.save": "保存密钥",
         "dashboard.credentials.saved": "密钥已保存。",
-        "dashboard.credentials.ngrok_empty": "ngrok authtoken 不能为空。",
+        "dashboard.credentials.ngrok_empty": "未填写 ngrok authtoken，已跳过 ngrok 更新。",
         "dashboard.credentials.ngrok_save_failed": "保存 ngrok authtoken 失败：{error}",
         "dashboard.credentials.config_save_failed": "保存 DeepSeek API Key 失败：{error}",
         "dashboard.settings.model": "模型",
@@ -176,7 +171,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "proxy.log.local_running": "本地代理仍在运行: {url}",
         "proxy.log.local_url": "本地代理 URL: {url}",
         "proxy.log.default_model": "默认模型: {model}",
-        "proxy.log.cursor_hint": "请将上述 URL 填入 Cursor 的 Base URL（末尾加 /v1）",
+        "proxy.log.cursor_hint": (
+            "请将上述 URL 填入 Cursor 的 Base URL（末尾加 /v1），"
+            "API Key 在 Cursor 模型设置中填写"
+        ),
         "proxy.log.authtoken_ok": "ngrok authtoken 配置成功",
         "proxy.log.legacy_token_migrated": "已从旧版配置迁移 ngrok token: {path}",
         "proxy.log.legacy_token_cleared": "已自动清除旧版 ngrok token: {path}",
@@ -203,35 +201,25 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "wizard.subtitle": "First Run · Setup Wizard",
         "wizard.step.welcome": "Welcome",
         "wizard.step.ngrok": "ngrok",
-        "wizard.step.apikey": "API",
         "wizard.step.confirm": "Confirm",
         "wizard.welcome.title": "Welcome to DeepSeek Cursor Proxy",
         "wizard.welcome.body": (
             "This app helps you use DeepSeek thinking models in Cursor.\n\n"
-            "Setup takes two steps:\n"
-            "  1. Enter your ngrok authtoken (free account)\n"
-            "  2. Enter your DeepSeek API key (optional; can be set in Cursor)\n\n"
-            "After setup, the proxy starts and provides an HTTPS URL.\n"
-            "Paste it into Cursor's Base URL to get started."
+            "First-time setup only needs your ngrok authtoken (free account).\n"
+            "Set your DeepSeek API key in Cursor's custom model settings;\n"
+            "the proxy forwards the key from Cursor requests and does not use\n"
+            "any key saved in this app.\n\n"
+            "After setup, paste the HTTPS URL into Cursor's Base URL."
         ),
         "wizard.ngrok.title": "Configure ngrok Authtoken",
         "wizard.ngrok.desc": "ngrok creates a public HTTPS tunnel so Cursor can reach the local proxy.",
         "wizard.ngrok.get_token": "Get token: ",
         "wizard.ngrok.token_label": "ngrok Authtoken",
-        "wizard.apikey.title": "Configure DeepSeek API Key (Optional)",
-        "wizard.apikey.desc": (
-            "You can set the API key here or later in Cursor.\n"
-            "Either option works. If you skip this step, make sure Cursor's\n"
-            "API Key field contains your DeepSeek API key."
-        ),
-        "wizard.apikey.get_key": "Get API key: ",
-        "wizard.apikey.label": "DeepSeek API Key (optional)",
         "wizard.confirm.title": "Review Settings",
         "wizard.confirm.ngrok": "  ngrok authtoken : {value}",
         "wizard.confirm.use_ngrok": "  Use ngrok tunnel : yes",
-        "wizard.confirm.api_key": "  DeepSeek API Key: {value}",
         "wizard.confirm.not_set": "(not set)",
-        "wizard.confirm.skip_api_key": "(skipped; configure in Cursor)",
+        "wizard.confirm.cursor_api_key": "  DeepSeek API Key: set in Cursor model settings",
         "wizard.btn.prev": "Back",
         "wizard.btn.next": "Next",
         "wizard.btn.finish": "Finish Setup",
@@ -251,7 +239,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dashboard.url.label": "Cursor Base URL",
         "dashboard.url.wait": "Waiting to start...",
         "dashboard.url.wait_ngrok": "Waiting for ngrok tunnel...",
-        "dashboard.url.hint": "Tip: add a custom model in Cursor and paste the URL above (must include /v1)",
+        "dashboard.url.hint": (
+            "Tip: add a custom model in Cursor, paste the URL above (must include /v1), "
+            "and enter your API key in Cursor (sent with requests, not from this app)"
+        ),
         "dashboard.btn.copy": " Copy ",
         "dashboard.btn.copied": " Copied ",
         "dashboard.btn.start": "Start Proxy",
@@ -262,10 +253,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "dashboard.settings.hide": "▾ Advanced Settings",
         "dashboard.credentials.title": "Credentials",
         "dashboard.credentials.ngrok": "ngrok authtoken",
-        "dashboard.credentials.deepseek": "DeepSeek API Key",
+        "dashboard.credentials.deepseek": "DeepSeek API Key (memo)",
+        "dashboard.credentials.deepseek_hint": (
+            "Saved locally for your reference (shown in plain text). "
+            "The proxy uses the API key configured in Cursor."
+        ),
         "dashboard.credentials.save": "Save credentials",
         "dashboard.credentials.saved": "Credentials saved.",
-        "dashboard.credentials.ngrok_empty": "ngrok authtoken cannot be empty.",
+        "dashboard.credentials.ngrok_empty": "ngrok authtoken was empty; ngrok was not updated.",
         "dashboard.credentials.ngrok_save_failed": "Failed to save ngrok authtoken: {error}",
         "dashboard.credentials.config_save_failed": "Failed to save DeepSeek API Key: {error}",
         "dashboard.settings.model": "Model",
@@ -352,7 +347,10 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "proxy.log.local_running": "Local proxy still running: {url}",
         "proxy.log.local_url": "Local proxy URL: {url}",
         "proxy.log.default_model": "Default model: {model}",
-        "proxy.log.cursor_hint": "Paste the URL above into Cursor's Base URL (append /v1)",
+        "proxy.log.cursor_hint": (
+            "Paste the URL above into Cursor's Base URL (append /v1) "
+            "and set your API key in Cursor's model settings"
+        ),
         "proxy.log.authtoken_ok": "ngrok authtoken configured",
         "proxy.log.legacy_token_migrated": "Migrated ngrok token from legacy config: {path}",
         "proxy.log.legacy_token_cleared": "Automatically cleared legacy ngrok token: {path}",

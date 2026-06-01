@@ -514,7 +514,7 @@ class ScrollableHost(tk.Frame):
 
 
 class SetupWizard(tk.Frame):
-    """首次运行引导向导：配置 ngrok authtoken + API key。"""
+    """首次运行引导向导：配置 ngrok authtoken。"""
 
     def __init__(
         self,
@@ -531,7 +531,6 @@ class SetupWizard(tk.Frame):
         self._current_step = 0
         self._steps: list[tk.Frame] = []
         self._token_var = tk.StringVar()
-        self._api_key_var = tk.StringVar()
 
         self._build()
 
@@ -613,7 +612,6 @@ class SetupWizard(tk.Frame):
 
         self._build_step_welcome()
         self._build_step_ngrok()
-        self._build_step_apikey()
         self._build_step_confirm()
         self._show_step(0)
 
@@ -693,64 +691,6 @@ class SetupWizard(tk.Frame):
 
         self._steps.append(frame)
 
-    # ---- API Key 页 ----
-    def _build_step_apikey(self) -> None:
-        frame = tk.Frame(self._content, bg=COLORS["bg"])
-        card = Card(frame, margin_x=0, margin_y=0, fill="both")
-        card.pack(fill="both", expand=True)
-        c = card.content
-        section_title(c, t("wizard.apikey.title")).pack(anchor="w", pady=(0, 8))
-        tk.Label(
-            c,
-            text=t("wizard.apikey.desc"),
-            font=FONTS["body"],
-            bg=COLORS["card"],
-            fg=COLORS["text_dim"],
-            wraplength=480,
-            justify="left",
-        ).pack(anchor="w", pady=(0, 8))
-        link_frame = tk.Frame(c, bg=COLORS["card"])
-        link_frame.pack(anchor="w", pady=(0, 12))
-        tk.Label(
-            link_frame,
-            text=t("wizard.apikey.get_key"),
-            font=FONTS["small"],
-            bg=COLORS["card"],
-            fg=COLORS["text_muted"],
-        ).pack(side="left")
-        tk.Label(
-            link_frame,
-            text="https://platform.deepseek.com/api_keys",
-            font=FONTS["small"],
-            bg=COLORS["card"],
-            fg=COLORS["accent_dim"],
-            cursor="hand2",
-        ).pack(side="left", padx=(4, 0))
-
-        tk.Label(
-            c,
-            text=t("wizard.apikey.label"),
-            font=FONTS["small"],
-            bg=COLORS["card"],
-            fg=COLORS["text_dim"],
-        ).pack(anchor="w", pady=(0, 4))
-        entry_box = inset_frame(c)
-        entry_box.pack(fill="x")
-        entry = tk.Entry(
-            entry_box,
-            textvariable=self._api_key_var,
-            font=FONTS["mono"],
-            bg=COLORS["input"],
-            fg=COLORS["fg"],
-            insertbackground=COLORS["fg"],
-            relief="flat",
-            borderwidth=0,
-        )
-        entry.pack(fill="x", ipady=8, padx=10, pady=6)
-        entry.bind("<Control-a>", lambda e: entry.select_range(0, "end"))
-
-        self._steps.append(frame)
-
     # ---- 确认页 ----
     def _build_step_confirm(self) -> None:
         frame = tk.Frame(self._content, bg=COLORS["bg"])
@@ -793,7 +733,6 @@ class SetupWizard(tk.Frame):
         step_labels = [
             t("wizard.step.welcome"),
             t("wizard.step.ngrok"),
-            t("wizard.step.apikey"),
             t("wizard.step.confirm"),
         ]
         for widget in self._step_indicator.winfo_children():
@@ -848,7 +787,7 @@ class SetupWizard(tk.Frame):
     def _next_step(self) -> None:
         if self._current_step < len(self._steps) - 1:
             # 在确认页更新摘要
-            if self._current_step == 2:
+            if self._current_step == 1:
                 self._update_confirm_text()
             self._show_step(self._current_step + 1)
 
@@ -858,17 +797,13 @@ class SetupWizard(tk.Frame):
 
     def _update_confirm_text(self) -> None:
         token = self._token_var.get().strip()
-        api_key = self._api_key_var.get().strip()
         lines = [
             t(
                 "wizard.confirm.ngrok",
                 value=token if token else t("wizard.confirm.not_set"),
             ),
             t("wizard.confirm.use_ngrok"),
-            t(
-                "wizard.confirm.api_key",
-                value=api_key if api_key else t("wizard.confirm.skip_api_key"),
-            ),
+            t("wizard.confirm.cursor_api_key"),
         ]
         self._confirm_text.configure(state="normal")
         self._confirm_text.delete("1.0", "end")
@@ -878,7 +813,6 @@ class SetupWizard(tk.Frame):
     def _finish(self) -> None:
         """完成引导，调用回调。"""
         token = self._token_var.get().strip()
-        api_key = self._api_key_var.get().strip()
 
         if not token:
             messagebox.showwarning(
@@ -888,7 +822,7 @@ class SetupWizard(tk.Frame):
             self._show_step(1)
             return
 
-        self._on_complete(ngrok_token=token, api_key=api_key if api_key else None)
+        self._on_complete(ngrok_token=token)
 
     def _on_language_selected(self, _event: Any = None) -> None:
         selected = self._language_var.get()
@@ -1193,6 +1127,17 @@ class Dashboard(tk.Frame):
             )
             entry.pack(fill="x", ipady=6, padx=8, pady=4)
 
+        self._deepseek_key_hint = tk.Label(
+            sf,
+            text=t("dashboard.credentials.deepseek_hint"),
+            font=FONTS["caption"],
+            bg=COLORS["card"],
+            fg=COLORS["text_muted"],
+            wraplength=520,
+            justify="left",
+        )
+        self._deepseek_key_hint.pack(anchor="w", padx=(0, 0), pady=(0, 4))
+
         cred_btn_row = tk.Frame(sf, bg=COLORS["card"])
         cred_btn_row.pack(fill="x", pady=(8, 4))
         self._save_credentials_btn = btn_primary(
@@ -1354,6 +1299,7 @@ class Dashboard(tk.Frame):
     def _save_credentials(self) -> None:
         ngrok_token = self._ngrok_token_var.get().strip()
         api_key = self._deepseek_api_key_var.get().strip()
+        ngrok_skipped = False
 
         if ngrok_token:
             try:
@@ -1365,11 +1311,7 @@ class Dashboard(tk.Frame):
                 )
                 return
         else:
-            messagebox.showwarning(
-                t("dashboard.credentials.title"),
-                t("dashboard.credentials.ngrok_empty"),
-            )
-            return
+            ngrok_skipped = True
 
         try:
             update_config_file(
@@ -1386,10 +1328,16 @@ class Dashboard(tk.Frame):
             )
             return
 
-        messagebox.showinfo(
-            t("dashboard.credentials.title"),
-            t("dashboard.credentials.saved"),
-        )
+        if ngrok_skipped:
+            messagebox.showinfo(
+                t("dashboard.credentials.title"),
+                f"{t('dashboard.credentials.saved')}\n{t('dashboard.credentials.ngrok_empty')}",
+            )
+        else:
+            messagebox.showinfo(
+                t("dashboard.credentials.title"),
+                t("dashboard.credentials.saved"),
+            )
 
     def _clear_data(self) -> None:
         if not messagebox.askyesno(
@@ -1715,7 +1663,7 @@ class DeepSeekProxyGUI:
         )
         self._wizard.pack(fill="both", expand=True)
 
-    def _on_setup_complete(self, ngrok_token: str, api_key: str | None) -> None:
+    def _on_setup_complete(self, ngrok_token: str) -> None:
         """引导完成后的处理。"""
         try:
             # 配置 ngrok authtoken
@@ -1726,9 +1674,6 @@ class DeepSeekProxyGUI:
             config_path = default_config_path()
             if not config_path.exists():
                 populate_default_config_file(config_path)
-
-            if api_key:
-                update_config_file({"deepseek_api_key": api_key})
 
             self._show_dashboard()
         except Exception as exc:
@@ -1772,7 +1717,6 @@ class DeepSeekProxyGUI:
         self._show_wizard()
         if self._wizard is not None:
             self._wizard._token_var.set("")
-            self._wizard._api_key_var.set("")
             self._wizard._show_step(1)
 
     def _reload_interface(self) -> None:
@@ -1784,7 +1728,6 @@ class DeepSeekProxyGUI:
             wizard_state = {
                 "step": self._wizard._current_step,
                 "token": self._wizard._token_var.get(),
-                "api_key": self._wizard._api_key_var.get(),
             }
 
         self._root.title(t("app.title"))
@@ -1804,7 +1747,6 @@ class DeepSeekProxyGUI:
             self._show_wizard()
             if wizard_state is not None and self._wizard is not None:
                 self._wizard._token_var.set(wizard_state["token"])
-                self._wizard._api_key_var.set(wizard_state["api_key"])
                 self._wizard._show_step(wizard_state["step"])
 
     def _on_close(self) -> None:
