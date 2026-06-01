@@ -17,6 +17,11 @@ PKG_NAME="deepseek-cursor-proxy"
 ARCH="$(dpkg --print-architecture 2>/dev/null || echo amd64)"
 OUT_DEB="$DIST_DIR/${PKG_NAME}_${APP_VER}_${ARCH}.deb"
 
+if [ ! -d "$APP_DIR" ]; then
+  echo "跳过 deb：未找到 $APP_DIR（请先成功运行 build_installer.py）"
+  exit 0
+fi
+
 rm -rf "$PKG_ROOT"
 mkdir -p "$PKG_ROOT/DEBIAN" "$PKG_ROOT/usr/local/$PKG_NAME" "$PKG_ROOT/usr/local/bin"
 

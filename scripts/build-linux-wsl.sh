@@ -21,7 +21,7 @@ python3 -m pip install pyinstaller PyYAML pillow
 
 python3 build_installer.py
 chmod +x scripts/build-linux-deb.sh
-scripts/build-linux-deb.sh
+scripts/build-linux-deb.sh || echo "WARNING: deb 包构建失败，已跳过"
 
-ls -lh dist/*.zip
-ls -lh dist/*.deb
+ls -lh dist/*.zip 2>/dev/null || true
+ls -lh dist/*.deb 2>/dev/null || true

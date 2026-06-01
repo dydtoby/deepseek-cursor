@@ -232,7 +232,7 @@ def step_download_cloudflared(freeze_dir: Path) -> Path | None:
         return None
 
 
-def step_download_ngrok(freeze_dir: Path) -> Path:
+def step_download_ngrok(freeze_dir: Path) -> Path | None:
     print("\n[步骤 2/4] 下载 ngrok...")
 
     binary_name = ngrok_binary_name()
@@ -251,10 +251,10 @@ def step_download_ngrok(freeze_dir: Path) -> Path:
         ngrok_path = download_ngrok_binary(freeze_dir, report=_report)
         print()
     except Exception as exc:
-        print(f"\n[ERROR] ngrok 下载失败: {exc}")
+        print(f"\n[WARNING] ngrok 下载失败（可选，运行时可自行安装）: {exc}")
         print("请手动从 https://ngrok.com/download 下载 ngrok 并放入:")
         print(f"  {freeze_dir / binary_name}")
-        sys.exit(1)
+        return None
 
     print(f"  {binary_name} 已提取: {ngrok_path}")
     return ngrok_path
