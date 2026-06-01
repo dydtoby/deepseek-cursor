@@ -249,6 +249,7 @@ class ProxyConfig:
     auto_start: bool = DEFAULT_AUTO_START
     service_name: str = DEFAULT_SERVICE_NAME
     update_channel: str = DEFAULT_UPDATE_CHANNEL
+    deepseek_api_key: str | None = None
     trace_dir: Path | None = None
 
     @classmethod
@@ -344,5 +345,8 @@ class ProxyConfig:
             ),
             update_channel=normalize_update_channel(
                 setting_value(settings, "update_channel")
+            ),
+            deepseek_api_key=as_optional_str(
+                setting_value_any(settings, "deepseek_api_key", "api_key")
             ),
         )

@@ -40,6 +40,7 @@ from .ngrok_manager import (
     has_authtoken_configured,
     is_missing_authtoken_error,
     migrate_and_cleanup_legacy_tokens,
+    read_authtoken,
     validate_authtoken,
 )
 from .server import DeepSeekProxyHandler, DeepSeekProxyServer
@@ -236,20 +237,172 @@ class ProxyController:
 # ---------------------------------------------------------------------------
 
 COLORS = {
-    "bg": "#1e1e2e",
+    "bg": "#11111b",
     "fg": "#cdd6f4",
+    "card": "#1e1e2e",
     "surface": "#313244",
     "surface_bright": "#45475a",
+    "input": "#181825",
     "accent": "#89b4fa",
     "accent_dim": "#74c7ec",
     "green": "#a6e3a1",
+    "green_dim": "#1e3a2f",
     "yellow": "#f9e2af",
+    "yellow_dim": "#3b3a2a",
     "red": "#f38ba8",
-    "text_dim": "#6c7086",
+    "red_dim": "#3b2a35",
+    "text_dim": "#a6adc8",
+    "text_muted": "#6c7086",
     "border": "#45475a",
+    "border_soft": "#313244",
 }
 
 FONTS = gui_fonts()
+CONTENT_PAD_X = 28
+
+
+class Card(tk.Frame):
+    """带描边的卡片容器，content 用于放置子控件。"""
+
+    def __init__(
+        self,
+        master: tk.Misc,
+        *,
+        padding: int = 16,
+        margin_x: int = CONTENT_PAD_X,
+        margin_y: int = 10,
+        fill: str = "x",
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(master, bg=COLORS["bg"], **kwargs)
+        self._shell = tk.Frame(
+            self,
+            bg=COLORS["card"],
+            highlightbackground=COLORS["border"],
+            highlightthickness=1,
+        )
+        self._shell.pack(fill=fill, padx=margin_x, pady=margin_y)
+        self.content = tk.Frame(self._shell, bg=COLORS["card"])
+        self.content.pack(fill="both", expand=True, padx=padding, pady=padding)
+
+
+def section_title(parent: tk.Misc, text: str, *, bg: str | None = None) -> tk.Label:
+    bg = bg or COLORS["card"]
+    return tk.Label(
+        parent,
+        text=text,
+        font=FONTS["heading"],
+        bg=bg,
+        fg=COLORS["fg"],
+    )
+
+
+def section_divider(parent: tk.Misc, *, bg: str | None = None) -> None:
+    bg = bg or COLORS["card"]
+    tk.Frame(parent, bg=COLORS["border_soft"], height=1).pack(fill="x", pady=(14, 14))
+
+
+def inset_frame(parent: tk.Misc, *, bg: str | None = None) -> tk.Frame:
+    bg = bg or COLORS["input"]
+    frame = tk.Frame(
+        parent,
+        bg=bg,
+        highlightbackground=COLORS["border_soft"],
+        highlightthickness=1,
+    )
+    return frame
+
+
+def btn_primary(
+    parent: tk.Misc,
+    text: str,
+    command: Any,
+    *,
+    bg: str | None = None,
+    fg: str | None = None,
+) -> tk.Button:
+    return tk.Button(
+        parent,
+        text=text,
+        font=FONTS["heading"],
+        bg=bg or COLORS["accent"],
+        fg=fg or COLORS["bg"],
+        activebackground=COLORS["accent_dim"],
+        activeforeground=COLORS["bg"],
+        relief="flat",
+        borderwidth=0,
+        padx=28,
+        pady=10,
+        cursor="hand2",
+        command=command,
+    )
+
+
+def btn_secondary(
+    parent: tk.Misc,
+    text: str,
+    command: Any,
+    *,
+    accent: bool = False,
+) -> tk.Button:
+    bg = COLORS["surface_bright"] if not accent else COLORS["surface"]
+    fg = COLORS["accent"] if accent else COLORS["fg"]
+    return tk.Button(
+        parent,
+        text=text,
+        font=FONTS["body"],
+        bg=bg,
+        fg=fg,
+        activebackground=COLORS["surface"],
+        activeforeground=COLORS["fg"],
+        relief="flat",
+        borderwidth=0,
+        padx=14,
+        pady=6,
+        cursor="hand2",
+        command=command,
+    )
+
+
+def btn_ghost(parent: tk.Misc, text: str, command: Any) -> tk.Button:
+    return tk.Button(
+        parent,
+        text=text,
+        font=FONTS["small"],
+        bg=COLORS["bg"],
+        fg=COLORS["text_dim"],
+        activebackground=COLORS["surface"],
+        activeforeground=COLORS["fg"],
+        relief="flat",
+        borderwidth=0,
+        padx=8,
+        pady=4,
+        cursor="hand2",
+        command=command,
+    )
+
+
+def status_badge(parent: tk.Misc) -> tuple[tk.Frame, tk.Label, tk.Label]:
+    """返回 (外框, 状态点, 状态文字)。"""
+    frame = tk.Frame(
+        parent,
+        bg=COLORS["surface"],
+        highlightbackground=COLORS["border_soft"],
+        highlightthickness=1,
+    )
+    inner = tk.Frame(frame, bg=COLORS["surface"])
+    inner.pack(padx=10, pady=6)
+    dot = tk.Label(inner, text="●", font=FONTS["body"], bg=COLORS["surface"], fg=COLORS["red"])
+    dot.pack(side="left", padx=(0, 6))
+    label = tk.Label(
+        inner,
+        text="",
+        font=FONTS["small"],
+        bg=COLORS["surface"],
+        fg=COLORS["text_dim"],
+    )
+    label.pack(side="left")
+    return frame, dot, label
 
 
 def apply_theme(root: tk.Tk) -> None:
@@ -264,10 +417,95 @@ def apply_theme(root: tk.Tk) -> None:
     style.configure("TLabel", background=COLORS["bg"], foreground=COLORS["fg"], font=FONTS["body"])
     style.configure("TButton", background=COLORS["surface_bright"], foreground=COLORS["fg"], font=FONTS["body"], borderwidth=0, focuscolor="none")
     style.map("TButton", background=[("active", COLORS["accent"]), ("disabled", COLORS["surface"])])
-    style.configure("TEntry", fieldbackground=COLORS["surface"], foreground=COLORS["fg"], font=FONTS["body"], insertcolor=COLORS["fg"])
-    style.configure("TCheckbutton", background=COLORS["bg"], foreground=COLORS["fg"], font=FONTS["body"])
+    style.configure(
+        "TEntry",
+        fieldbackground=COLORS["input"],
+        foreground=COLORS["fg"],
+        font=FONTS["body"],
+        insertcolor=COLORS["fg"],
+        borderwidth=0,
+    )
+    style.configure(
+        "TCombobox",
+        fieldbackground=COLORS["input"],
+        background=COLORS["surface"],
+        foreground=COLORS["fg"],
+        arrowcolor=COLORS["text_dim"],
+        borderwidth=0,
+    )
+    style.map(
+        "TCombobox",
+        fieldbackground=[("readonly", COLORS["input"])],
+        selectbackground=[("readonly", COLORS["accent"])],
+        selectforeground=[("readonly", COLORS["bg"])],
+    )
+    style.configure("TCheckbutton", background=COLORS["card"], foreground=COLORS["fg"], font=FONTS["body"])
+    style.configure(
+        "Vertical.TScrollbar",
+        background=COLORS["surface_bright"],
+        troughcolor=COLORS["bg"],
+        borderwidth=0,
+        arrowcolor=COLORS["text_muted"],
+    )
     style.configure("TLabelframe", background=COLORS["bg"], foreground=COLORS["text_dim"], font=FONTS["body"])
     style.configure("TLabelframe.Label", background=COLORS["bg"], foreground=COLORS["text_dim"], font=FONTS["body"])
+
+
+class ScrollableHost(tk.Frame):
+    """可垂直滚动的容器，用于主窗口与向导内容区。"""
+
+    def __init__(self, master: tk.Widget, **kwargs: Any) -> None:
+        super().__init__(master, bg=COLORS["bg"], **kwargs)
+        self._canvas = tk.Canvas(self, bg=COLORS["bg"], highlightthickness=0)
+        self._scrollbar = ttk.Scrollbar(
+            self, orient="vertical", command=self._canvas.yview
+        )
+        self.inner = tk.Frame(self._canvas, bg=COLORS["bg"])
+        self._inner_window = self._canvas.create_window(
+            (0, 0), window=self.inner, anchor="nw"
+        )
+        self._canvas.configure(yscrollcommand=self._scrollbar.set)
+        self._canvas.pack(side="left", fill="both", expand=True)
+        self._scrollbar.pack(side="right", fill="y")
+        self.inner.bind("<Configure>", self._on_inner_configure)
+        self._canvas.bind("<Configure>", self._on_canvas_configure)
+        self._bind_mousewheel()
+
+    def _on_inner_configure(self, _event: tk.Event) -> None:
+        self._canvas.configure(scrollregion=self._canvas.bbox("all"))
+
+    def _on_canvas_configure(self, event: tk.Event) -> None:
+        self._canvas.itemconfigure(self._inner_window, width=event.width)
+
+    def _bind_mousewheel(self) -> None:
+        def _scroll(event: tk.Event) -> None:
+            if sys.platform == "darwin":
+                self._canvas.yview_scroll(int(-event.delta), "units")
+            else:
+                self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _scroll_up(_event: tk.Event) -> None:
+            self._canvas.yview_scroll(-1, "units")
+
+        def _scroll_down(_event: tk.Event) -> None:
+            self._canvas.yview_scroll(1, "units")
+
+        def _bind(_event: tk.Event) -> None:
+            if sys.platform == "linux":
+                self._canvas.bind_all("<Button-4>", _scroll_up)
+                self._canvas.bind_all("<Button-5>", _scroll_down)
+            else:
+                self._canvas.bind_all("<MouseWheel>", _scroll)
+
+        def _unbind(_event: tk.Event) -> None:
+            if sys.platform == "linux":
+                self._canvas.unbind_all("<Button-4>")
+                self._canvas.unbind_all("<Button-5>")
+            else:
+                self._canvas.unbind_all("<MouseWheel>")
+
+        self._canvas.bind("<Enter>", _bind)
+        self._canvas.bind("<Leave>", _unbind)
 
 
 # ---------------------------------------------------------------------------
@@ -298,33 +536,43 @@ class SetupWizard(tk.Frame):
         self._build()
 
     def _build(self) -> None:
-        # 标题
         header = tk.Frame(self, bg=COLORS["bg"])
-        header.pack(fill="x", pady=(30, 10))
+        header.pack(fill="x", pady=(24, 4), padx=CONTENT_PAD_X)
+        title_row = tk.Frame(header, bg=COLORS["bg"])
+        title_row.pack(fill="x")
         tk.Label(
-            header,
+            title_row,
             text="DeepSeek Cursor Proxy",
             font=FONTS["title"],
             bg=COLORS["bg"],
             fg=COLORS["accent"],
-        ).pack()
+        ).pack(side="left")
+        tk.Label(
+            title_row,
+            text=f"v{__version__}",
+            font=FONTS["caption"],
+            bg=COLORS["surface"],
+            fg=COLORS["text_dim"],
+            padx=8,
+            pady=2,
+        ).pack(side="left", padx=(12, 0))
         tk.Label(
             header,
             text=t("wizard.subtitle"),
-            font=FONTS["heading"],
+            font=FONTS["subtitle"],
             bg=COLORS["bg"],
             fg=COLORS["text_dim"],
-        ).pack(pady=(2, 0))
+        ).pack(anchor="w", pady=(6, 0))
 
         lang_frame = tk.Frame(header, bg=COLORS["bg"])
-        lang_frame.pack(pady=(8, 0))
+        lang_frame.pack(anchor="w", pady=(10, 0))
         tk.Label(
             lang_frame,
-            text=f"{t('language.label')}: ",
+            text=f"{t('language.label')}:",
             font=FONTS["small"],
             bg=COLORS["bg"],
-            fg=COLORS["text_dim"],
-        ).pack(side="left")
+            fg=COLORS["text_muted"],
+        ).pack(side="left", padx=(0, 8))
         self._language_var = tk.StringVar(value=get_locale())
         lang_combo = ttk.Combobox(
             lang_frame,
@@ -336,40 +584,31 @@ class SetupWizard(tk.Frame):
         lang_combo.pack(side="left")
         lang_combo.bind("<<ComboboxSelected>>", self._on_language_selected)
 
-        # 步骤指示器
         self._step_indicator = tk.Frame(self, bg=COLORS["bg"])
-        self._step_indicator.pack(fill="x", pady=(10, 5))
+        self._step_indicator.pack(fill="x", pady=(16, 8), padx=CONTENT_PAD_X)
 
-        # 内容区
-        self._content = tk.Frame(self, bg=COLORS["bg"])
-        self._content.pack(fill="both", expand=True, padx=40, pady=10)
+        # 内容区（可滚动）
+        self._scroll = ScrollableHost(self)
+        self._scroll.pack(fill="both", expand=True, padx=20, pady=10)
+        self._content = self._scroll.inner
+        content_pad = tk.Frame(self._content, bg=COLORS["bg"])
+        content_pad.pack(fill="both", expand=True, padx=20)
+        self._content = content_pad
 
         # 按钮区
         self._button_frame = tk.Frame(self, bg=COLORS["bg"])
         self._button_frame.pack(fill="x", padx=40, pady=(10, 30))
 
-        self._prev_btn = tk.Button(
+        self._prev_btn = btn_secondary(
             self._button_frame,
-            text=t("wizard.btn.prev"),
-            font=FONTS["body"],
-            bg=COLORS["surface"],
-            fg=COLORS["fg"],
-            relief="flat",
-            padx=20,
-            pady=6,
-            command=self._prev_step,
+            t("wizard.btn.prev"),
+            self._prev_step,
         )
 
-        self._next_btn = tk.Button(
+        self._next_btn = btn_primary(
             self._button_frame,
-            text=t("wizard.btn.next"),
-            font=FONTS["body"],
-            bg=COLORS["accent"],
-            fg=COLORS["bg"],
-            relief="flat",
-            padx=20,
-            pady=6,
-            command=self._next_step,
+            t("wizard.btn.next"),
+            self._next_step,
         )
 
         self._build_step_welcome()
@@ -381,86 +620,75 @@ class SetupWizard(tk.Frame):
     # ---- 欢迎页 ----
     def _build_step_welcome(self) -> None:
         frame = tk.Frame(self._content, bg=COLORS["bg"])
+        card = Card(frame, margin_x=0, margin_y=0, fill="both")
+        card.pack(fill="both", expand=True)
+        c = card.content
+        section_title(c, t("wizard.welcome.title")).pack(anchor="w", pady=(0, 12))
         tk.Label(
-            frame,
-            text=t("wizard.welcome.title"),
-            font=FONTS["heading"],
-            bg=COLORS["bg"],
-            fg=COLORS["fg"],
-        ).pack(anchor="w", pady=(0, 16))
-
-        info_text = t("wizard.welcome.body")
-        tk.Label(
-            frame,
-            text=info_text,
+            c,
+            text=t("wizard.welcome.body"),
             font=FONTS["body"],
-            bg=COLORS["bg"],
+            bg=COLORS["card"],
             fg=COLORS["text_dim"],
             justify="left",
-            wraplength=460,
+            wraplength=480,
         ).pack(anchor="w")
         self._steps.append(frame)
 
     # ---- ngrok authtoken 页 ----
     def _build_step_ngrok(self) -> None:
         frame = tk.Frame(self._content, bg=COLORS["bg"])
+        card = Card(frame, margin_x=0, margin_y=0, fill="both")
+        card.pack(fill="both", expand=True)
+        c = card.content
+        section_title(c, t("wizard.ngrok.title")).pack(anchor="w", pady=(0, 8))
         tk.Label(
-            frame,
-            text=t("wizard.ngrok.title"),
-            font=FONTS["heading"],
-            bg=COLORS["bg"],
-            fg=COLORS["fg"],
-        ).pack(anchor="w", pady=(0, 8))
-
-        tk.Label(
-            frame,
+            c,
             text=t("wizard.ngrok.desc"),
             font=FONTS["body"],
-            bg=COLORS["bg"],
+            bg=COLORS["card"],
             fg=COLORS["text_dim"],
-            wraplength=460,
+            wraplength=480,
             justify="left",
-        ).pack(anchor="w", pady=(0, 6))
-
-        link_frame = tk.Frame(frame, bg=COLORS["bg"])
+        ).pack(anchor="w", pady=(0, 8))
+        link_frame = tk.Frame(c, bg=COLORS["card"])
         link_frame.pack(anchor="w", pady=(0, 12))
         tk.Label(
             link_frame,
             text=t("wizard.ngrok.get_token"),
-            font=FONTS["body"],
-            bg=COLORS["bg"],
-            fg=COLORS["text_dim"],
+            font=FONTS["small"],
+            bg=COLORS["card"],
+            fg=COLORS["text_muted"],
         ).pack(side="left")
-        link = tk.Label(
+        tk.Label(
             link_frame,
             text="https://dashboard.ngrok.com/get-started/your-authtoken",
             font=FONTS["small"],
-            bg=COLORS["bg"],
+            bg=COLORS["card"],
             fg=COLORS["accent_dim"],
             cursor="hand2",
-        )
-        link.pack(side="left")
+        ).pack(side="left", padx=(4, 0))
 
         tk.Label(
-            frame,
+            c,
             text=t("wizard.ngrok.token_label"),
-            font=FONTS["body"],
-            bg=COLORS["bg"],
-            fg=COLORS["fg"],
-        ).pack(anchor="w", pady=(8, 2))
-
+            font=FONTS["small"],
+            bg=COLORS["card"],
+            fg=COLORS["text_dim"],
+        ).pack(anchor="w", pady=(0, 4))
+        entry_box = inset_frame(c)
+        entry_box.pack(fill="x")
         entry = tk.Entry(
-            frame,
+            entry_box,
             textvariable=self._token_var,
-            font=FONTS["body"],
-            bg=COLORS["surface"],
+            font=FONTS["mono"],
+            bg=COLORS["input"],
             fg=COLORS["fg"],
             insertbackground=COLORS["fg"],
             relief="flat",
-            width=50,
-            show="*",
+            borderwidth=0,
         )
-        entry.pack(fill="x", ipady=4)
+        entry.pack(fill="x", ipady=8, padx=10, pady=6)
         entry.bind("<Control-a>", lambda e: entry.select_range(0, "end"))
 
         self._steps.append(frame)
@@ -468,63 +696,57 @@ class SetupWizard(tk.Frame):
     # ---- API Key 页 ----
     def _build_step_apikey(self) -> None:
         frame = tk.Frame(self._content, bg=COLORS["bg"])
+        card = Card(frame, margin_x=0, margin_y=0, fill="both")
+        card.pack(fill="both", expand=True)
+        c = card.content
+        section_title(c, t("wizard.apikey.title")).pack(anchor="w", pady=(0, 8))
         tk.Label(
-            frame,
-            text=t("wizard.apikey.title"),
-            font=FONTS["heading"],
-            bg=COLORS["bg"],
-            fg=COLORS["fg"],
-        ).pack(anchor="w", pady=(0, 8))
-
-        tk.Label(
-            frame,
+            c,
             text=t("wizard.apikey.desc"),
             font=FONTS["body"],
-            bg=COLORS["bg"],
+            bg=COLORS["card"],
             fg=COLORS["text_dim"],
-            wraplength=460,
+            wraplength=480,
             justify="left",
-        ).pack(anchor="w", pady=(0, 10))
-
-        link_frame = tk.Frame(frame, bg=COLORS["bg"])
+        ).pack(anchor="w", pady=(0, 8))
+        link_frame = tk.Frame(c, bg=COLORS["card"])
         link_frame.pack(anchor="w", pady=(0, 12))
         tk.Label(
             link_frame,
             text=t("wizard.apikey.get_key"),
-            font=FONTS["body"],
-            bg=COLORS["bg"],
-            fg=COLORS["text_dim"],
+            font=FONTS["small"],
+            bg=COLORS["card"],
+            fg=COLORS["text_muted"],
         ).pack(side="left")
-        link = tk.Label(
+        tk.Label(
             link_frame,
             text="https://platform.deepseek.com/api_keys",
             font=FONTS["small"],
-            bg=COLORS["bg"],
+            bg=COLORS["card"],
             fg=COLORS["accent_dim"],
             cursor="hand2",
-        )
-        link.pack(side="left")
+        ).pack(side="left", padx=(4, 0))
 
         tk.Label(
-            frame,
+            c,
             text=t("wizard.apikey.label"),
-            font=FONTS["body"],
-            bg=COLORS["bg"],
-            fg=COLORS["fg"],
-        ).pack(anchor="w", pady=(8, 2))
-
+            font=FONTS["small"],
+            bg=COLORS["card"],
+            fg=COLORS["text_dim"],
+        ).pack(anchor="w", pady=(0, 4))
+        entry_box = inset_frame(c)
+        entry_box.pack(fill="x")
         entry = tk.Entry(
-            frame,
+            entry_box,
             textvariable=self._api_key_var,
-            font=FONTS["body"],
-            bg=COLORS["surface"],
+            font=FONTS["mono"],
+            bg=COLORS["input"],
             fg=COLORS["fg"],
             insertbackground=COLORS["fg"],
             relief="flat",
-            width=50,
-            show="*",
+            borderwidth=0,
         )
-        entry.pack(fill="x", ipady=4)
+        entry.pack(fill="x", ipady=8, padx=10, pady=6)
         entry.bind("<Control-a>", lambda e: entry.select_range(0, "end"))
 
         self._steps.append(frame)
@@ -532,18 +754,17 @@ class SetupWizard(tk.Frame):
     # ---- 确认页 ----
     def _build_step_confirm(self) -> None:
         frame = tk.Frame(self._content, bg=COLORS["bg"])
-        tk.Label(
-            frame,
-            text=t("wizard.confirm.title"),
-            font=FONTS["heading"],
-            bg=COLORS["bg"],
-            fg=COLORS["fg"],
-        ).pack(anchor="w", pady=(0, 16))
+        card = Card(frame, margin_x=0, margin_y=0, fill="both")
+        card.pack(fill="both", expand=True)
+        c = card.content
+        section_title(c, t("wizard.confirm.title")).pack(anchor="w", pady=(0, 12))
 
+        confirm_scroll = inset_frame(c)
+        confirm_scroll.pack(fill="both", expand=True)
         self._confirm_text = tk.Text(
-            frame,
+            confirm_scroll,
             font=FONTS["mono"],
-            bg=COLORS["surface"],
+            bg=COLORS["input"],
             fg=COLORS["fg"],
             relief="flat",
             height=8,
@@ -551,8 +772,15 @@ class SetupWizard(tk.Frame):
             padx=10,
             pady=10,
             state="disabled",
+            wrap="word",
+            borderwidth=0,
         )
-        self._confirm_text.pack(fill="x")
+        confirm_bar = ttk.Scrollbar(
+            confirm_scroll, orient="vertical", command=self._confirm_text.yview
+        )
+        self._confirm_text.configure(yscrollcommand=confirm_bar.set)
+        self._confirm_text.pack(side="left", fill="both", expand=True)
+        confirm_bar.pack(side="right", fill="y")
 
         self._steps.append(frame)
 
@@ -562,20 +790,45 @@ class SetupWizard(tk.Frame):
             step.pack_forget()
         self._steps[index].pack(fill="both", expand=True)
 
-        # 更新步骤指示器
+        step_labels = [
+            t("wizard.step.welcome"),
+            t("wizard.step.ngrok"),
+            t("wizard.step.apikey"),
+            t("wizard.step.confirm"),
+        ]
         for widget in self._step_indicator.winfo_children():
             widget.destroy()
-        dots = []
-        for i in range(len(self._steps)):
-            dot = tk.Label(
-                self._step_indicator,
-                text="●",
+        for i, name in enumerate(step_labels):
+            if i > 0:
+                tk.Label(
+                    self._step_indicator,
+                    text="›",
+                    font=FONTS["caption"],
+                    bg=COLORS["bg"],
+                    fg=COLORS["text_muted"],
+                ).pack(side="left", padx=4)
+            if i < index:
+                pill_bg, pill_fg = COLORS["surface_bright"], COLORS["fg"]
+            elif i == index:
+                pill_bg, pill_fg = COLORS["accent"], COLORS["bg"]
+            else:
+                pill_bg, pill_fg = COLORS["surface"], COLORS["text_muted"]
+            pill = tk.Frame(self._step_indicator, bg=pill_bg)
+            pill.pack(side="left")
+            tk.Label(
+                pill,
+                text=f" {i + 1} ",
+                font=FONTS["caption"],
+                bg=pill_bg,
+                fg=pill_fg,
+            ).pack(side="left", padx=(6, 0), pady=4)
+            tk.Label(
+                pill,
+                text=name,
                 font=FONTS["small"],
-                bg=COLORS["bg"],
-                fg=COLORS["accent"] if i <= index else COLORS["surface_bright"],
-            )
-            dot.pack(side="left", padx=3)
-            dots.append(dot)
+                bg=pill_bg,
+                fg=pill_fg,
+            ).pack(side="left", padx=(2, 8), pady=4)
 
         # 更新按钮
         self._prev_btn.pack_forget()
@@ -609,14 +862,12 @@ class SetupWizard(tk.Frame):
         lines = [
             t(
                 "wizard.confirm.ngrok",
-                value="****" + token[-4:] if len(token) > 4 else t("wizard.confirm.not_set"),
+                value=token if token else t("wizard.confirm.not_set"),
             ),
             t("wizard.confirm.use_ngrok"),
             t(
                 "wizard.confirm.api_key",
-                value="****" + api_key[-4:]
-                if len(api_key) > 4
-                else t("wizard.confirm.skip_api_key"),
+                value=api_key if api_key else t("wizard.confirm.skip_api_key"),
             ),
         ]
         self._confirm_text.configure(state="normal")
@@ -663,56 +914,58 @@ class LogPanel(tk.Frame):
         self._build()
 
     def _build(self) -> None:
-        # 标题栏
-        header = tk.Frame(self, bg=COLORS["surface"])
+        card = Card(self, margin_x=CONTENT_PAD_X, margin_y=8)
+        card.pack(fill="x")
+        c = card.content
+
+        header = tk.Frame(c, bg=COLORS["card"])
         header.pack(fill="x")
         tk.Label(
             header,
             text=t("log.title"),
             font=FONTS["heading"],
-            bg=COLORS["surface"],
+            bg=COLORS["card"],
             fg=COLORS["fg"],
-        ).pack(side="left", pady=4)
+        ).pack(side="left")
 
-        btn_frame = tk.Frame(header, bg=COLORS["surface"])
-        btn_frame.pack(side="right", padx=4, pady=2)
+        btn_frame = tk.Frame(header, bg=COLORS["card"])
+        btn_frame.pack(side="right")
         self._auto_scroll_var = tk.BooleanVar(value=True)
         tk.Checkbutton(
             btn_frame,
             text=t("log.auto_scroll"),
             variable=self._auto_scroll_var,
             font=FONTS["small"],
-            bg=COLORS["surface"],
+            bg=COLORS["card"],
             fg=COLORS["text_dim"],
-            selectcolor=COLORS["surface"],
-            activebackground=COLORS["surface"],
+            selectcolor=COLORS["input"],
+            activebackground=COLORS["card"],
             activeforeground=COLORS["fg"],
-        ).pack(side="left")
-        tk.Button(
-            btn_frame,
-            text=t("log.clear"),
-            font=FONTS["small"],
-            bg=COLORS["surface_bright"],
+        ).pack(side="left", padx=(0, 8))
+        btn_secondary(btn_frame, t("log.clear"), self.clear).pack(side="left")
+
+        text_frame = inset_frame(c)
+        text_frame.pack(fill="x", pady=(12, 0))
+
+        self._text = tk.Text(
+            text_frame,
+            font=FONTS["mono"],
+            bg=COLORS["input"],
             fg=COLORS["fg"],
             relief="flat",
             padx=8,
-            pady=1,
-            command=self.clear,
-        ).pack(side="left", padx=(4, 0))
-
-        # 文本区域
-        self._text = tk.Text(
-            self,
-            font=FONTS["mono"],
-            bg=COLORS["bg"],
-            fg=COLORS["fg"],
-            relief="flat",
-            padx=6,
-            pady=4,
+            pady=6,
             wrap="word",
             state="disabled",
+            height=12,
+            borderwidth=0,
         )
-        self._text.pack(fill="both", expand=True)
+        scrollbar = ttk.Scrollbar(
+            text_frame, orient="vertical", command=self._text.yview
+        )
+        self._text.configure(yscrollcommand=scrollbar.set)
+        self._text.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
 
         # 颜色标签配置
         self._text.tag_configure("INFO", foreground=COLORS["green"])
@@ -721,11 +974,6 @@ class LogPanel(tk.Frame):
         self._text.tag_configure("DEBUG", foreground=COLORS["text_dim"])
 
         self._text.tag_configure("bold", font=FONTS["mono"])
-
-        # 滚动条
-        scrollbar = tk.Scrollbar(self._text, command=self._text.yview)
-        self._text.configure(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side="right", fill="y")
 
     def append(self, level: str, message: str) -> None:
         """追加一条日志。"""
@@ -790,172 +1038,220 @@ class Dashboard(tk.Frame):
         self._build()
 
     def _build(self) -> None:
-        # --- 顶部：标题 + 状态 ---
-        header = tk.Frame(self, bg=COLORS["bg"])
-        header.pack(fill="x", padx=30, pady=(24, 0))
+        self._scroll = ScrollableHost(self)
+        self._scroll.pack(fill="both", expand=True)
+        body = self._scroll.inner
 
+        # --- 顶栏 ---
+        header = tk.Frame(body, bg=COLORS["bg"])
+        header.pack(fill="x", padx=CONTENT_PAD_X, pady=(20, 4))
+        title_block = tk.Frame(header, bg=COLORS["bg"])
+        title_block.pack(side="left", fill="x", expand=True)
         tk.Label(
-            header,
+            title_block,
             text="DeepSeek Cursor Proxy",
             font=FONTS["title"],
             bg=COLORS["bg"],
             fg=COLORS["accent"],
-        ).pack(side="left")
-
-        self._status_frame = tk.Frame(header, bg=COLORS["bg"])
-        self._status_frame.pack(side="right")
-
-        self._status_dot = tk.Label(
-            self._status_frame,
-            text="●",
-            font=FONTS["heading"],
-            bg=COLORS["bg"],
-            fg=COLORS["red"],
-        )
-        self._status_dot.pack(side="left", padx=(0, 4))
-
-        self._status_label = tk.Label(
-            self._status_frame,
-            text=t("dashboard.status.stopped"),
-            font=FONTS["body"],
+        ).pack(anchor="w")
+        tk.Label(
+            title_block,
+            text=t("dashboard.subtitle"),
+            font=FONTS["subtitle"],
             bg=COLORS["bg"],
             fg=COLORS["text_dim"],
-        )
-        self._status_label.pack(side="left")
+        ).pack(anchor="w", pady=(2, 0))
 
-        # --- 中部：URL 区域 ---
-        url_frame = tk.Frame(self, bg=COLORS["surface"], padx=20, pady=16)
-        url_frame.pack(fill="x", padx=30, pady=(16, 0))
-
+        meta = tk.Frame(header, bg=COLORS["bg"])
+        meta.pack(side="right")
         tk.Label(
-            url_frame,
-            text=t("dashboard.url.label"),
-            font=FONTS["body"],
+            meta,
+            text=f"v{__version__}",
+            font=FONTS["caption"],
             bg=COLORS["surface"],
+            fg=COLORS["text_dim"],
+            padx=8,
+            pady=3,
+        ).pack(anchor="e", pady=(0, 8))
+        self._status_frame, self._status_dot, self._status_label = status_badge(meta)
+        self._status_frame.pack(anchor="e")
+        self._status_label.configure(text=t("dashboard.status.stopped"))
+
+        # --- Cursor 连接地址 ---
+        url_card = Card(body, margin_y=12)
+        url_card.pack(fill="x")
+        uc = url_card.content
+        tk.Label(
+            uc,
+            text=t("dashboard.url.label"),
+            font=FONTS["small"],
+            bg=COLORS["card"],
             fg=COLORS["text_dim"],
         ).pack(anchor="w")
-
-        url_row = tk.Frame(url_frame, bg=COLORS["surface"])
-        url_row.pack(fill="x", pady=(4, 0))
-
+        url_row = tk.Frame(uc, bg=COLORS["card"])
+        url_row.pack(fill="x", pady=(8, 0))
+        url_inset = inset_frame(url_row)
+        url_inset.pack(side="left", fill="x", expand=True)
         self._url_var = tk.StringVar(value=t("dashboard.url.wait"))
         self._url_entry = tk.Entry(
-            url_row,
+            url_inset,
             textvariable=self._url_var,
             font=FONTS["url"],
-            bg=COLORS["bg"],
+            bg=COLORS["input"],
             fg=COLORS["accent_dim"],
             relief="flat",
-            readonlybackground=COLORS["bg"],
+            readonlybackground=COLORS["input"],
             state="readonly",
+            borderwidth=0,
         )
-        self._url_entry.pack(side="left", fill="x", expand=True, ipady=3)
-
-        self._copy_btn = tk.Button(
+        self._url_entry.pack(fill="x", ipady=8, padx=10, pady=4)
+        self._copy_btn = btn_secondary(
             url_row,
-            text=t("dashboard.btn.copy"),
-            font=FONTS["body"],
-            bg=COLORS["accent"],
-            fg=COLORS["bg"],
-            relief="flat",
-            padx=12,
-            pady=2,
-            command=self._copy_url,
+            t("dashboard.btn.copy"),
+            self._copy_url,
+            accent=True,
         )
-        self._copy_btn.pack(side="left", padx=(8, 0))
-
+        self._copy_btn.pack(side="left", padx=(10, 0))
         self._url_hint_label = tk.Label(
-            url_frame,
+            uc,
             text=t("dashboard.url.hint"),
-            font=FONTS["small"],
-            bg=COLORS["surface"],
-            fg=COLORS["text_dim"],
-        ).pack(anchor="w", pady=(6, 0))
+            font=FONTS["caption"],
+            bg=COLORS["card"],
+            fg=COLORS["text_muted"],
+        )
+        self._url_hint_label.pack(anchor="w", pady=(8, 0))
 
-        # --- 控制按钮 ---
-        ctrl_frame = tk.Frame(self, bg=COLORS["bg"])
-        ctrl_frame.pack(fill="x", padx=30, pady=(16, 0))
-
-        self._toggle_btn = tk.Button(
-            ctrl_frame,
-            text=t("dashboard.btn.start"),
-            font=FONTS["heading"],
+        # --- 主操作 ---
+        ctrl_card = Card(body, margin_y=6)
+        ctrl_card.pack(fill="x")
+        self._toggle_btn = btn_primary(
+            ctrl_card.content,
+            t("dashboard.btn.start"),
+            self._toggle_proxy,
             bg=COLORS["green"],
-            fg=COLORS["bg"],
-            relief="flat",
-            padx=36,
-            pady=8,
-            command=self._toggle_proxy,
         )
-        self._toggle_btn.pack()
+        self._toggle_btn.pack(pady=4)
 
-        # --- 设置面板（可折叠）---
+        # --- 设置（可折叠）---
         self._settings_visible = False
-        self._settings_frame = tk.Frame(self, bg=COLORS["bg"])
+        self._settings_frame = tk.Frame(body, bg=COLORS["bg"])
         self._build_settings()
-
-        self._settings_toggle = tk.Button(
-            self,
-            text=t("dashboard.settings.show"),
-            font=FONTS["small"],
-            bg=COLORS["bg"],
-            fg=COLORS["text_dim"],
-            relief="flat",
-            command=self._toggle_settings,
+        self._settings_toggle_row = tk.Frame(body, bg=COLORS["bg"])
+        self._settings_toggle_row.pack(fill="x", pady=(4, 0))
+        self._settings_toggle = btn_ghost(
+            self._settings_toggle_row,
+            t("dashboard.settings.show"),
+            self._toggle_settings,
         )
-        self._settings_toggle.pack(pady=(6, 0))
+        self._settings_toggle.pack(padx=CONTENT_PAD_X, anchor="w")
 
         # --- 底部：日志面板 ---
-        self._log_panel = LogPanel(self)
-        self._log_panel.pack(fill="both", expand=True, padx=30, pady=12)
+        self._log_panel = LogPanel(body)
+        self._log_panel.pack(fill="x", padx=30, pady=12)
 
     def _build_settings(self) -> None:
-        sf = tk.Frame(self._settings_frame, bg=COLORS["surface"], padx=16, pady=12)
-        sf.pack(fill="x", padx=30)
+        settings_card = Card(self._settings_frame, margin_x=CONTENT_PAD_X, margin_y=6)
+        settings_card.pack(fill="x")
+        sf = settings_card.content
+
+        section_title(sf, t("dashboard.credentials.title")).pack(anchor="w", pady=(0, 10))
+
+        self._ngrok_token_var = tk.StringVar(value=read_authtoken() or "")
+        self._deepseek_api_key_var = tk.StringVar(
+            value=self._config.deepseek_api_key or ""
+        )
+        self._credential_labels: list[tk.Label] = []
+
+        for label_key, var in (
+            ("dashboard.credentials.ngrok", self._ngrok_token_var),
+            ("dashboard.credentials.deepseek", self._deepseek_api_key_var),
+        ):
+            row = tk.Frame(sf, bg=COLORS["card"])
+            row.pack(fill="x", pady=4)
+            label = tk.Label(
+                row,
+                text=f"{t(label_key)}:",
+                font=FONTS["small"],
+                bg=COLORS["card"],
+                fg=COLORS["text_dim"],
+                width=14,
+                anchor="e",
+            )
+            label.pack(side="left", padx=(0, 10))
+            self._credential_labels.append(label)
+            entry_box = inset_frame(row)
+            entry_box.pack(side="left", fill="x", expand=True)
+            entry = tk.Entry(
+                entry_box,
+                textvariable=var,
+                font=FONTS["mono"],
+                bg=COLORS["input"],
+                fg=COLORS["fg"],
+                insertbackground=COLORS["fg"],
+                relief="flat",
+                borderwidth=0,
+            )
+            entry.pack(fill="x", ipady=6, padx=8, pady=4)
+
+        cred_btn_row = tk.Frame(sf, bg=COLORS["card"])
+        cred_btn_row.pack(fill="x", pady=(8, 4))
+        self._save_credentials_btn = btn_primary(
+            cred_btn_row,
+            t("dashboard.credentials.save"),
+            self._save_credentials,
+        )
+        self._save_credentials_btn.configure(font=FONTS["body"], padx=16, pady=6)
+        self._save_credentials_btn.pack(anchor="w")
+
+        section_divider(sf)
+
+        section_title(sf, t("dashboard.settings.general")).pack(anchor="w", pady=(0, 8))
 
         labels = list(self._SETTING_KEYS)
 
         self._setting_vars: dict[str, tk.StringVar] = {}
         for i, (label_key, key) in enumerate(labels):
-            row = tk.Frame(sf, bg=COLORS["surface"])
-            row.pack(fill="x", pady=3)
+            row = tk.Frame(sf, bg=COLORS["card"])
+            row.pack(fill="x", pady=4)
             label = tk.Label(
                 row,
                 text=f"{t(label_key)}:",
-                font=FONTS["body"],
-                bg=COLORS["surface"],
+                font=FONTS["small"],
+                bg=COLORS["card"],
                 fg=COLORS["text_dim"],
-                width=12,
+                width=14,
                 anchor="e",
             )
-            label.pack(side="left", padx=(0, 8))
+            label.pack(side="left", padx=(0, 10))
             self._setting_labels.append(label)
 
             default = getattr(self._config, key, "")
             var = tk.StringVar(value=str(default))
             self._setting_vars[key] = var
 
+            entry_box = inset_frame(row)
+            entry_box.pack(side="left", fill="x", expand=True)
             entry = tk.Entry(
-                row,
+                entry_box,
                 textvariable=var,
                 font=FONTS["body"],
-                bg=COLORS["bg"],
+                bg=COLORS["input"],
                 fg=COLORS["fg"],
                 insertbackground=COLORS["fg"],
                 relief="flat",
-                width=30,
+                borderwidth=0,
             )
-            entry.pack(side="left", ipady=2)
+            entry.pack(fill="x", ipady=5, padx=8, pady=3)
 
-        lang_row = tk.Frame(sf, bg=COLORS["surface"])
+        lang_row = tk.Frame(sf, bg=COLORS["card"])
         lang_row.pack(fill="x", pady=(10, 3))
         self._language_label = tk.Label(
             lang_row,
             text=f"{t('language.label')}:",
-            font=FONTS["body"],
-            bg=COLORS["surface"],
+            font=FONTS["small"],
+            bg=COLORS["card"],
             fg=COLORS["text_dim"],
-            width=12,
+            width=14,
             anchor="e",
         )
         self._language_label.pack(side="left", padx=(0, 8))
@@ -972,18 +1268,18 @@ class Dashboard(tk.Frame):
 
         self._autostart_cb = None
         if supports_login_autostart():
-            autostart_row = tk.Frame(sf, bg=COLORS["surface"])
+            autostart_row = tk.Frame(sf, bg=COLORS["card"])
             autostart_row.pack(fill="x", pady=(10, 3))
             self._autostart_label = tk.Label(
                 autostart_row,
                 text=f"{t('dashboard.autostart.label')}:",
-                font=FONTS["body"],
-                bg=COLORS["surface"],
+                font=FONTS["small"],
+                bg=COLORS["card"],
                 fg=COLORS["text_dim"],
-                width=12,
+                width=14,
                 anchor="e",
             )
-            self._autostart_label.pack(side="left", padx=(0, 8))
+            self._autostart_label.pack(side="left", padx=(0, 10))
             self._autostart_var = tk.BooleanVar(
                 value=is_login_autostart_enabled(),
             )
@@ -992,60 +1288,108 @@ class Dashboard(tk.Frame):
                 text=t("dashboard.autostart.checkbox"),
                 variable=self._autostart_var,
                 font=FONTS["body"],
-                bg=COLORS["surface"],
+                bg=COLORS["card"],
                 fg=COLORS["fg"],
-                activebackground=COLORS["surface"],
+                activebackground=COLORS["card"],
                 activeforeground=COLORS["fg"],
-                selectcolor=COLORS["bg"],
+                selectcolor=COLORS["input"],
                 relief="flat",
                 command=self._on_autostart_toggled,
             )
             self._autostart_cb.pack(side="left")
             self._apply_autostart_preference()
 
-        clear_row = tk.Frame(sf, bg=COLORS["surface"])
+        section_divider(sf)
+
+        section_title(sf, t("dashboard.settings.tools")).pack(anchor="w", pady=(0, 8))
+
+        tool_row = tk.Frame(sf, bg=COLORS["card"])
+        tool_row.pack(fill="x")
+        self._check_update_btn = btn_secondary(
+            tool_row,
+            t("dashboard.update.check"),
+            self._check_updates,
+            accent=True,
+        )
+        self._check_update_btn.pack(side="left", padx=(0, 8))
+
+        if sys.platform == "linux":
+            self._service_btn = btn_secondary(
+                tool_row,
+                t("dashboard.service.install"),
+                self._install_service_helper,
+            )
+            self._service_btn.pack(side="left")
+
+        clear_row = tk.Frame(sf, bg=COLORS["card"])
         clear_row.pack(fill="x", pady=(14, 0))
         self._clear_data_btn = tk.Button(
             clear_row,
             text=t("dashboard.clear_data.btn"),
             font=FONTS["body"],
-            bg=COLORS["bg"],
+            bg=COLORS["red_dim"],
             fg=COLORS["red"],
+            activebackground=COLORS["surface"],
+            activeforeground=COLORS["red"],
             relief="flat",
-            padx=12,
-            pady=4,
+            borderwidth=0,
+            padx=14,
+            pady=6,
+            cursor="hand2",
             command=self._clear_data,
         )
         self._clear_data_btn.pack(anchor="w")
 
-        tool_row = tk.Frame(sf, bg=COLORS["surface"])
-        tool_row.pack(fill="x", pady=(10, 0))
-        self._check_update_btn = tk.Button(
-            tool_row,
-            text=t("dashboard.update.check"),
-            font=FONTS["small"],
-            bg=COLORS["bg"],
-            fg=COLORS["accent"],
-            relief="flat",
-            padx=10,
-            pady=3,
-            command=self._check_updates,
-        )
-        self._check_update_btn.pack(side="left")
+    def _refresh_credentials(self) -> None:
+        if hasattr(self, "_ngrok_token_var"):
+            self._ngrok_token_var.set(read_authtoken() or "")
+        if hasattr(self, "_deepseek_api_key_var"):
+            try:
+                refreshed = ProxyConfig.from_file()
+                self._deepseek_api_key_var.set(refreshed.deepseek_api_key or "")
+                self._config = refreshed
+            except Exception:
+                self._deepseek_api_key_var.set("")
 
-        if sys.platform == "linux":
-            self._service_btn = tk.Button(
-                tool_row,
-                text=t("dashboard.service.install"),
-                font=FONTS["small"],
-                bg=COLORS["bg"],
-                fg=COLORS["accent_dim"],
-                relief="flat",
-                padx=10,
-                pady=3,
-                command=self._install_service_helper,
+    def _save_credentials(self) -> None:
+        ngrok_token = self._ngrok_token_var.get().strip()
+        api_key = self._deepseek_api_key_var.get().strip()
+
+        if ngrok_token:
+            try:
+                configure_authtoken(ngrok_token)
+            except Exception as exc:
+                messagebox.showerror(
+                    t("dashboard.credentials.title"),
+                    t("dashboard.credentials.ngrok_save_failed", error=exc),
+                )
+                return
+        else:
+            messagebox.showwarning(
+                t("dashboard.credentials.title"),
+                t("dashboard.credentials.ngrok_empty"),
             )
-            self._service_btn.pack(side="left", padx=(8, 0))
+            return
+
+        try:
+            update_config_file(
+                {"deepseek_api_key": api_key},
+            )
+            self._config = replace(
+                self._config,
+                deepseek_api_key=api_key or None,
+            )
+        except Exception as exc:
+            messagebox.showerror(
+                t("dashboard.credentials.title"),
+                t("dashboard.credentials.config_save_failed", error=exc),
+            )
+            return
+
+        messagebox.showinfo(
+            t("dashboard.credentials.title"),
+            t("dashboard.credentials.saved"),
+        )
 
     def _clear_data(self) -> None:
         if not messagebox.askyesno(
@@ -1107,6 +1451,7 @@ class Dashboard(tk.Frame):
                 cache=cache_status,
             ),
         )
+        self._refresh_credentials()
         LOG.info(
             "Cleared local data: authtoken=%s cache_rows=%s",
             result.authtoken_cleared,
@@ -1211,11 +1556,15 @@ class Dashboard(tk.Frame):
     def _toggle_settings(self) -> None:
         self._settings_visible = not self._settings_visible
         if self._settings_visible:
-            self._settings_frame.pack(fill="x", padx=0, pady=(6, 0), before=self._settings_toggle)
-            self._settings_toggle.configure(text=t("dashboard.settings.hide"))
+            self._settings_frame.pack(
+                fill="x",
+                pady=(4, 0),
+                before=self._settings_toggle_row,
+            )
+            self._settings_toggle.configure(text=f"▾ {t('dashboard.settings.hide')}")
         else:
             self._settings_frame.pack_forget()
-            self._settings_toggle.configure(text=t("dashboard.settings.show"))
+            self._settings_toggle.configure(text=f"▸ {t('dashboard.settings.show')}")
 
     def _toggle_proxy(self) -> None:
         if self._controller.is_running:
@@ -1246,16 +1595,24 @@ class Dashboard(tk.Frame):
     def _set_state(
         self, state: str, message: str, public_url: str | None = None, local_url: str | None = None
     ) -> None:
-        colors = {
-            "running": COLORS["green"],
-            "starting": COLORS["yellow"],
-            "stopping": COLORS["yellow"],
-            "error": COLORS["red"],
-            "stopped": COLORS["red"],
+        state_styles = {
+            "running": (COLORS["green"], COLORS["green_dim"]),
+            "starting": (COLORS["yellow"], COLORS["yellow_dim"]),
+            "stopping": (COLORS["yellow"], COLORS["yellow_dim"]),
+            "error": (COLORS["red"], COLORS["red_dim"]),
+            "stopped": (COLORS["red"], COLORS["red_dim"]),
         }
-        color = colors.get(state, COLORS["text_dim"])
-        self._status_dot.configure(fg=color)
-        self._status_label.configure(text=message)
+        dot_color, badge_bg = state_styles.get(
+            state, (COLORS["text_muted"], COLORS["surface"])
+        )
+        self._status_dot.configure(fg=dot_color, bg=badge_bg)
+        self._status_label.configure(text=message, fg=COLORS["text_dim"], bg=badge_bg)
+        self._status_frame.configure(bg=badge_bg)
+        for child in self._status_frame.winfo_children():
+            child.configure(bg=badge_bg)
+            for sub in child.winfo_children():
+                if isinstance(sub, tk.Label):
+                    sub.configure(bg=badge_bg)
 
         if state == "running":
             self._toggle_btn.configure(
@@ -1317,8 +1674,8 @@ class DeepSeekProxyGUI:
     def __init__(self, cli_config: dict[str, Any] | None = None) -> None:
         self._root = tk.Tk()
         self._root.title(t("app.title"))
-        self._root.geometry("700x620")
-        self._root.minsize(580, 480)
+        self._root.geometry("760x720")
+        self._root.minsize(620, 520)
         apply_theme(self._root)
 
         self._log_queue: queue.Queue[logging.LogRecord] = queue.Queue()
@@ -1370,7 +1727,8 @@ class DeepSeekProxyGUI:
             if not config_path.exists():
                 populate_default_config_file(config_path)
 
-            # TODO: 如果用户提供了 api_key，可以写入配置文件或环境变量
+            if api_key:
+                update_config_file({"deepseek_api_key": api_key})
 
             self._show_dashboard()
         except Exception as exc:

@@ -141,12 +141,14 @@ def gui_fonts() -> dict[str, tuple[str, int, str] | tuple[str, int]]:
         ui = "DejaVu Sans"
         mono = "DejaVu Sans Mono"
     return {
-        "title": (ui, 16, "bold"),
+        "title": (ui, 18, "bold"),
         "heading": (ui, 13, "bold"),
+        "subtitle": (ui, 12),
         "body": (ui, 11),
         "mono": (mono, 10),
         "url": (mono, 11),
         "small": (ui, 9),
+        "caption": (ui, 9),
     }
 
 

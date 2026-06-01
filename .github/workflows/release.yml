@@ -30,6 +30,8 @@ jobs:
 
       - name: Build portable package and installer
         run: python build_installer.py
+        env:
+          PYTHONIOENCODING: utf-8
 
       - name: Sign installer (optional)
         shell: pwsh
