@@ -93,6 +93,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "是否打开发布页下载？"
         ),
         "dashboard.update.latest": "当前已是最新版本（{current}）。",
+        "dashboard.autostart.title": "开机自动启动",
+        "dashboard.autostart.label": "登录后启动",
+        "dashboard.autostart.checkbox": "登录 Windows 时自动打开本应用",
+        "dashboard.autostart.need_install": (
+            "请先通过 install.bat 或安装程序将应用安装到本地，"
+            "再开启登录后自动启动。"
+        ),
+        "dashboard.autostart.failed": "无法更新开机启动设置：{error}",
+        "dashboard.autostart.config_save_failed": (
+            "启动项已更新，但写入配置文件失败：{error}"
+        ),
         "dashboard.service.title": "服务模式",
         "dashboard.service.install": "服务化设置",
         "dashboard.service.linux_hint": (
@@ -101,7 +112,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "  ./install-linux-service.sh\n\n"
             "然后使用 systemctl --user 管理服务。"
         ),
-        "dashboard.service.windows_done": "已创建开机启动脚本：\n{path}",
+        "dashboard.service.windows_done": (
+            "已启用登录后自动打开应用。\n\n"
+            "启动项：{path}"
+        ),
+        "dashboard.service.windows_need_install": (
+            "请先通过 install.bat 或安装程序将应用安装到本地，"
+            "再设置登录后自动启动。"
+        ),
         "dashboard.service.unsupported": "当前平台暂不支持该操作。",
         "dashboard.clear_data.btn": "清除缓存与 Token",
         "dashboard.clear_data.confirm.title": "确认清除",
@@ -236,6 +254,17 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "Open release page now?"
         ),
         "dashboard.update.latest": "You are up to date ({current}).",
+        "dashboard.autostart.title": "Auto-start on login",
+        "dashboard.autostart.label": "Launch on login",
+        "dashboard.autostart.checkbox": "Open this app automatically when I sign in to Windows",
+        "dashboard.autostart.need_install": (
+            "Install the app with install.bat or the setup program "
+            "before enabling auto-start on login."
+        ),
+        "dashboard.autostart.failed": "Could not update auto-start: {error}",
+        "dashboard.autostart.config_save_failed": (
+            "Auto-start was updated, but saving config failed: {error}"
+        ),
         "dashboard.service.title": "Service Mode",
         "dashboard.service.install": "Service Setup",
         "dashboard.service.linux_hint": (
@@ -244,7 +273,14 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "  ./install-linux-service.sh\n\n"
             "Then manage it via systemctl --user."
         ),
-        "dashboard.service.windows_done": "Startup script created:\n{path}",
+        "dashboard.service.windows_done": (
+            "Auto-start on login is enabled.\n\n"
+            "Run key: {path}"
+        ),
+        "dashboard.service.windows_need_install": (
+            "Install the app with install.bat or the setup program "
+            "before enabling auto-start on login."
+        ),
         "dashboard.service.unsupported": "This operation is not supported on this platform.",
         "dashboard.clear_data.btn": "Clear Cache & Token",
         "dashboard.clear_data.confirm.title": "Confirm Clear",

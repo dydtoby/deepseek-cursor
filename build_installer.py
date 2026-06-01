@@ -20,16 +20,19 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 DIST_DIR = PROJECT_ROOT / "dist"
 BUILD_DIR = PROJECT_ROOT / "build"
 FREEZE_OUTPUT = DIST_DIR / "DeepSeekCursorProxy"
-INSTALLER_OUTPUT = DIST_DIR / "DeepSeekCursorProxy-Setup.exe"
-
 APP_NAME = "DeepSeek Cursor Proxy"
 APP_VERSION = "0.1.3"
 APP_PUBLISHER = "DeepSeek Cursor Proxy"
+APP_INSTALL_FOLDER = "DeepSeekCursorProxy"
+INSTALLER_OUTPUT = DIST_DIR / f"DeepSeekCursorProxy-v{APP_VERSION}-Setup.exe"
+
+_regenerate_icon = False
 
 INNO_SETUP_PATHS = [
     r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
     r"C:\Program Files\Inno Setup 6\ISCC.exe",
     r"C:\Program Files (x86)\Inno Setup 5\ISCC.exe",
+    str(Path.home() / "AppData" / "Local" / "Programs" / "Inno Setup 6" / "ISCC.exe"),
 ]
 
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -70,18 +73,28 @@ def run_cmd(cmd: list[str], cwd: Path | None = None, desc: str = "") -> None:
 
 def step_generate_icon() -> Path | None:
     if sys.platform != "win32":
-        print("\n[步骤 0/3] 跳过 .ico 生成（非 Windows 平台）")
+        print("\n[步骤 0/3] 跳过 .ico（非 Windows 平台）")
         return None
 
-    print("\n[步骤 0/3] 生成应用图标...")
+    print("\n[步骤 0/3] 准备应用图标...")
     icon_path = PROJECT_ROOT / "assets" / "app_icon.ico"
-    from generate_icon import generate_icon
 
-    generate_icon(icon_path)
-    if not icon_path.is_file():
-        print(f"\n[ERROR] 图标生成失败: {icon_path}")
+    if _regenerate_icon:
+        from generate_icon import generate_icon
+
+        generate_icon(icon_path)
+    elif icon_path.is_file() and icon_path.stat().st_size > 0:
+        print(f"  使用现有图标: {icon_path} ({icon_path.stat().st_size:,} bytes)")
+    else:
+        print("  未找到 assets/app_icon.ico，尝试从 logo.png 生成...")
+        from generate_icon import generate_icon
+
+        generate_icon(icon_path)
+
+    if not icon_path.is_file() or icon_path.stat().st_size == 0:
+        print(f"\n[ERROR] 图标不可用: {icon_path}")
+        print("请将 app_icon.ico 放入 assets/ 目录，或使用 --regenerate-icon 生成。")
         sys.exit(1)
-    print(f"  图标路径: {icon_path} ({icon_path.stat().st_size:,} bytes)")
     return icon_path
 
 
@@ -156,9 +169,10 @@ def step_freeze() -> Path:
     print(f"  冻结完成: {output_dir}")
 
     if sys.platform == "win32":
-        install_bat_src = PROJECT_ROOT / "scripts" / "install.bat"
-        if install_bat_src.is_file():
-            shutil.copy2(install_bat_src, output_dir / "install.bat")
+        for script_name in ("install.bat", "uninstall.bat"):
+            script_src = PROJECT_ROOT / "scripts" / script_name
+            if script_src.is_file():
+                shutil.copy2(script_src, output_dir / script_name)
     else:
         install_sh_src = PROJECT_ROOT / "scripts" / "install.sh"
         if install_sh_src.is_file():
@@ -258,44 +272,57 @@ def step_create_installer(freeze_dir: Path) -> Path:
 
 def _generate_iss(freeze_dir: Path) -> str:
     exe_name = app_executable_name()
+    setup_icon = str(PROJECT_ROOT / "assets" / "app_icon.ico").replace("/", "\\")
+    output_dir = str(DIST_DIR).replace("/", "\\")
+    freeze_source = str(freeze_dir).replace("/", "\\")
     return f'''; InnoSetup 脚本 — 由 build_installer.py 自动生成
 
 #define MyAppName "{APP_NAME}"
 #define MyAppVersion "{APP_VERSION}"
 #define MyAppPublisher "{APP_PUBLISHER}"
 #define MyAppExeName "{exe_name}"
+#define MyAppInstallFolder "{APP_INSTALL_FOLDER}"
 
 [Setup]
-AppId={{{F1A2B3C4-D5E6-7890-ABCD-EF1234567890}}}
+AppId={{{{F1A2B3C4-D5E6-7890-ABCD-EF1234567890}}}}
 AppName={{#MyAppName}}
 AppVersion={{#MyAppVersion}}
 AppPublisher={{#MyAppPublisher}}
-DefaultDirName={{localappdata}}\\Programs\\{{#MyAppName}}
+DefaultDirName={{localappdata}}\\Programs\\{{#MyAppInstallFolder}}
 DefaultGroupName={{#MyAppName}}
 AllowNoIcons=yes
-OutputDir={DIST_DIR}
-OutputBaseFilename=DeepSeekCursorProxy-Setup
+OutputDir={output_dir}
+OutputBaseFilename=DeepSeekCursorProxy-v{APP_VERSION}-Setup
+SetupIconFile={setup_icon}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName={{#MyAppName}}
+UninstallDisplayIcon={{app}}\\app_icon.ico
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\\ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加图标:"
+Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加选项:"; Flags: unchecked
+Name: "autostart"; Description: "登录 Windows 时自动启动 DeepSeek Cursor Proxy"; GroupDescription: "启动选项:"; Flags: unchecked
+Name: "deleteconfig"; Description: "卸载时删除用户配置（~\\.deepseek-cursor-proxy）"; GroupDescription: "卸载选项:"; Flags: unchecked
 
 [Files]
-Source: "{freeze_dir.as_posix()}\\*"; DestDir: "{{app}}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{freeze_source}\\*"; DestDir: "{{app}}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{{group}}\\{{#MyAppName}}"; Filename: "{{app}}\\{{#MyAppExeName}}"
+Name: "{{group}}\\{{#MyAppName}}"; Filename: "{{app}}\\{{#MyAppExeName}}"; IconFilename: "{{app}}\\app_icon.ico"
 Name: "{{group}}\\卸载 {{#MyAppName}}"; Filename: "{{uninstallexe}}"
-Name: "{{commondesktop}}\\{{#MyAppName}}"; Filename: "{{app}}\\{{#MyAppExeName}}"; Tasks: desktopicon
+Name: "{{commondesktop}}\\{{#MyAppName}}"; Filename: "{{app}}\\{{#MyAppExeName}}"; IconFilename: "{{app}}\\app_icon.ico"; Tasks: desktopicon
+
+[Registry]
+Root: HKCU; Subkey: "Software\\Microsoft\\Windows\\CurrentVersion\\Run"; ValueType: string; ValueName: "DeepSeekCursorProxy"; ValueData: """{{app}}\\{{#MyAppExeName}}"""; Flags: uninsdeletevalue; Tasks: autostart
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{{userappdata}}\\.deepseek-cursor-proxy"; Tasks: deleteconfig
 
 [Run]
 Filename: "{{app}}\\{{#MyAppExeName}}"; Description: "启动 {{#MyAppName}}"; Flags: nowait postinstall skipifsilent
@@ -341,7 +368,15 @@ def main() -> None:
         help="仅生成 Windows 安装程序（需要先冻结）",
     )
     parser.add_argument("--clean", action="store_true", help="清理所有构建产物")
+    parser.add_argument(
+        "--regenerate-icon",
+        action="store_true",
+        help="从 assets/logo.png 重新生成 app_icon.ico（默认使用现有图标）",
+    )
     args = parser.parse_args()
+
+    global _regenerate_icon
+    _regenerate_icon = args.regenerate_icon
 
     if args.clean:
         step_clean()

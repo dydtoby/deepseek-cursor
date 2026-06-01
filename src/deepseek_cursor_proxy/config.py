@@ -185,6 +185,25 @@ def settings_from_config(
     return load_config_file(resolved_config_path), resolved_config_path
 
 
+def update_config_file(
+    updates: Mapping[str, Any],
+    config_path: str | Path | None = None,
+) -> Path:
+    """合并更新配置文件中的若干键并写回磁盘。"""
+    resolved_config_path = resolve_config_path(config_path)
+    if not resolved_config_path.exists():
+        populate_default_config_file(resolved_config_path)
+    settings = load_config_file(resolved_config_path)
+    settings.update(updates)
+    resolved_config_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    resolved_config_path.write_text(
+        yaml.safe_dump(settings, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    resolved_config_path.chmod(0o600)
+    return resolved_config_path
+
+
 def normalize_thinking(value: Any) -> str:
     thinking = as_str(value, DEFAULT_THINKING).strip().lower()
     if thinking in {"enabled", "disabled"}:

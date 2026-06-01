@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import queue
 import sys
+from dataclasses import replace
 import threading
 import time
 import tkinter as tk
@@ -16,11 +17,18 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Any
 
+from .autostart import (
+    is_login_autostart_enabled,
+    resolve_autostart_executable,
+    set_login_autostart,
+    supports_login_autostart,
+)
 from .clear_data import clear_local_data
 from .config import (
     ProxyConfig,
     default_config_path,
     populate_default_config_file,
+    update_config_file,
 )
 from . import __version__
 from .i18n import SUPPORTED_LOCALES, get_locale, init_locale, set_locale, t
@@ -962,6 +970,39 @@ class Dashboard(tk.Frame):
         self._language_combo.pack(side="left")
         self._language_combo.bind("<<ComboboxSelected>>", self._on_language_selected)
 
+        self._autostart_cb = None
+        if supports_login_autostart():
+            autostart_row = tk.Frame(sf, bg=COLORS["surface"])
+            autostart_row.pack(fill="x", pady=(10, 3))
+            self._autostart_label = tk.Label(
+                autostart_row,
+                text=f"{t('dashboard.autostart.label')}:",
+                font=FONTS["body"],
+                bg=COLORS["surface"],
+                fg=COLORS["text_dim"],
+                width=12,
+                anchor="e",
+            )
+            self._autostart_label.pack(side="left", padx=(0, 8))
+            self._autostart_var = tk.BooleanVar(
+                value=is_login_autostart_enabled(),
+            )
+            self._autostart_cb = tk.Checkbutton(
+                autostart_row,
+                text=t("dashboard.autostart.checkbox"),
+                variable=self._autostart_var,
+                font=FONTS["body"],
+                bg=COLORS["surface"],
+                fg=COLORS["fg"],
+                activebackground=COLORS["surface"],
+                activeforeground=COLORS["fg"],
+                selectcolor=COLORS["bg"],
+                relief="flat",
+                command=self._on_autostart_toggled,
+            )
+            self._autostart_cb.pack(side="left")
+            self._apply_autostart_preference()
+
         clear_row = tk.Frame(sf, bg=COLORS["surface"])
         clear_row.pack(fill="x", pady=(14, 0))
         self._clear_data_btn = tk.Button(
@@ -992,18 +1033,19 @@ class Dashboard(tk.Frame):
         )
         self._check_update_btn.pack(side="left")
 
-        self._service_btn = tk.Button(
-            tool_row,
-            text=t("dashboard.service.install"),
-            font=FONTS["small"],
-            bg=COLORS["bg"],
-            fg=COLORS["accent_dim"],
-            relief="flat",
-            padx=10,
-            pady=3,
-            command=self._install_service_helper,
-        )
-        self._service_btn.pack(side="left", padx=(8, 0))
+        if sys.platform == "linux":
+            self._service_btn = tk.Button(
+                tool_row,
+                text=t("dashboard.service.install"),
+                font=FONTS["small"],
+                bg=COLORS["bg"],
+                fg=COLORS["accent_dim"],
+                relief="flat",
+                padx=10,
+                pady=3,
+                command=self._install_service_helper,
+            )
+            self._service_btn.pack(side="left", padx=(8, 0))
 
     def _clear_data(self) -> None:
         if not messagebox.askyesno(
@@ -1106,34 +1148,59 @@ class Dashboard(tk.Frame):
             t("dashboard.update.latest", current=__version__),
         )
 
+    def _apply_autostart_preference(self) -> None:
+        """若配置要求自启但注册表未设置，则在启动 GUI 时同步一次。"""
+        if not supports_login_autostart() or self._autostart_cb is None:
+            return
+        if self._config.auto_start and not is_login_autostart_enabled():
+            if resolve_autostart_executable() is None:
+                return
+            ok, _ = set_login_autostart(True)
+            if ok:
+                self._autostart_var.set(True)
+
+    def _on_autostart_toggled(self) -> None:
+        if not supports_login_autostart() or self._autostart_cb is None:
+            return
+
+        enabled = bool(self._autostart_var.get())
+        if enabled and resolve_autostart_executable() is None:
+            self._autostart_var.set(False)
+            messagebox.showinfo(
+                t("dashboard.autostart.title"),
+                t("dashboard.autostart.need_install"),
+            )
+            return
+
+        ok, detail = set_login_autostart(enabled)
+        if not ok:
+            self._autostart_var.set(not enabled)
+            if detail == "executable_not_found":
+                messagebox.showerror(
+                    t("dashboard.autostart.title"),
+                    t("dashboard.autostart.need_install"),
+                )
+            else:
+                messagebox.showerror(
+                    t("dashboard.autostart.title"),
+                    t("dashboard.autostart.failed", error=detail),
+                )
+            return
+
+        try:
+            update_config_file({"auto_start": enabled})
+            self._config = replace(self._config, auto_start=enabled)
+        except Exception as exc:
+            messagebox.showwarning(
+                t("dashboard.autostart.title"),
+                t("dashboard.autostart.config_save_failed", error=exc),
+            )
+
     def _install_service_helper(self) -> None:
         if sys.platform == "linux":
             messagebox.showinfo(
                 t("dashboard.service.title"),
                 t("dashboard.service.linux_hint"),
-            )
-            return
-        if sys.platform == "win32":
-            startup_dir = (
-                Path.home()
-                / "AppData"
-                / "Roaming"
-                / "Microsoft"
-                / "Windows"
-                / "Start Menu"
-                / "Programs"
-                / "Startup"
-            )
-            startup_dir.mkdir(parents=True, exist_ok=True)
-            bat_path = startup_dir / "DeepSeekCursorProxy-startup.bat"
-            bat_path.write_text(
-                "@echo off\r\n"
-                "start \"\" \"%LOCALAPPDATA%\\Programs\\DeepSeekCursorProxy\\DeepSeekCursorProxy.exe\"\r\n",
-                encoding="utf-8",
-            )
-            messagebox.showinfo(
-                t("dashboard.service.title"),
-                t("dashboard.service.windows_done", path=str(bat_path)),
             )
             return
         messagebox.showinfo(

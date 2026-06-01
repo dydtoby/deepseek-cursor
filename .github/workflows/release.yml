@@ -25,7 +25,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller PyYAML pillow
 
-      - name: Build portable package
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build portable package and installer
         run: python build_installer.py
 
       - name: Sign installer (optional)
@@ -35,12 +38,17 @@ jobs:
           $pfxPath = "$env:RUNNER_TEMP\codesign.pfx"
           [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String("${{ secrets.WINDOWS_PFX_BASE64 }}"))
           $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe | Select-Object -First 1).FullName
-          & $signtool sign /f $pfxPath /p "${{ secrets.WINDOWS_PFX_PASSWORD }}" /tr "http://timestamp.digicert.com" /td SHA256 /fd SHA256 "dist\DeepSeekCursorProxy-Setup.exe"
+          Get-ChildItem dist\*-Setup.exe | ForEach-Object {
+            & $signtool sign /f $pfxPath /p "${{ secrets.WINDOWS_PFX_PASSWORD }}" /tr "http://timestamp.digicert.com" /td SHA256 /fd SHA256 $_.FullName
+          }
 
       - name: Generate checksums
         shell: pwsh
         run: |
-          Get-FileHash dist\*.zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $([System.IO.Path]::GetFileName($_.Path))" } | Set-Content dist\SHA256SUMS.txt
+          Get-ChildItem dist\*.zip, dist\*-Setup.exe -ErrorAction SilentlyContinue |
+            Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash)  $([System.IO.Path]::GetFileName($_.Path))" } |
+            Set-Content dist\SHA256SUMS.txt
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -93,6 +101,7 @@ jobs:
         with:
           files: |
             release-assets/windows-dist/*.zip
+            release-assets/windows-dist/*-Setup.exe
             release-assets/windows-dist/*.txt
             release-assets/linux-dist/*.zip
             release-assets/linux-dist/*.deb
